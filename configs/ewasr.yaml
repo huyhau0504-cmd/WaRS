@@ -1,0 +1,5 @@
+base: base.yaml
+
+# eWaSR gốc huấn luyện lại từ đầu (chỉ backbone ImageNet) — để so với trọng số chính thức
+model:
+  name: ewasr

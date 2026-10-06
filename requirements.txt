@@ -1,0 +1,13 @@
+# Laptop (dev/annotate/đánh giá) và Kaggle (huấn luyện). Kaggle đã có sẵn torch/torchvision/opencv.
+torch>=2.1
+torchvision>=0.16
+numpy
+opencv-python
+albumentations>=2.0
+pyyaml
+tqdm
+onnx
+onnxruntime
+# Tùy chọn
+onnxsim
+ultralytics

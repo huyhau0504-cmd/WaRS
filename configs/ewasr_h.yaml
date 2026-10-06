@@ -1,0 +1,6 @@
+base: base.yaml
+
+model:
+  name: ewasr_h
+  # Khởi tạo backbone + các khối trùng tên từ eWaSR chính thức; khối D học từ đầu
+  init_weights: weights/ewasr_resnet18.pth

@@ -1,0 +1,25 @@
+# Môi trường
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Dữ liệu: ảnh không đưa lên git (upload lên Kaggle dạng private dataset).
+# Riêng nhãn mép nước vẽ tay được commit.
+/data/*
+!/data/usv_vn/
+/data/usv_vn/*
+!/data/usv_vn/water_edges.json
+
+# Sản phẩm sinh ra
+weights/
+exports/
+runs/
+preds/
+results/
+hailo/build/
+*.pth
+*.pt
+*.onnx
+*.har
+*.hef

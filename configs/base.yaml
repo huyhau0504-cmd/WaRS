@@ -1,0 +1,28 @@
+# Cấu hình chung. Các file khác kế thừa bằng `base: base.yaml`.
+# Override từ dòng lệnh: --set train.epochs=50 data.mastr_root=/kaggle/input/mastr1325
+
+model:
+  name: ewasr               # xem wars/models/__init__.py: ewasr | ewasr_h | ewasr_c | ewasr_h_p
+  init_weights: null        # .pth để khởi tạo (strict=False), vd. weights/ewasr_resnet18.pth
+  input_size: [384, 512]    # [H, W] — phải chia hết cho 32
+
+data:
+  mastr_root: data/mastr1325
+  image_dir: images         # tương đối so với mastr_root (bản tải gốc: MaSTr1325_images_512x384)
+  mask_dir: masks           # (bản tải gốc: MaSTr1325_masks_512x384)
+  train_list: configs/mastr1325/train_images.txt
+  val_list: configs/mastr1325/val_images.txt
+  vn_color_aug: false       # augmentation ám màu mô phỏng USV-VN
+
+train:
+  epochs: 100
+  batch_size: 4
+  workers: 4
+  lr: 1.0e-6                # siêu tham số gốc của WaSR/eWaSR (RMSprop, decoder ×10, bias ×20)
+  momentum: 0.9
+  weight_decay: 1.0e-6
+  lr_decay_pow: 0.9
+  separation_loss_lambda: 0.01
+  amp: true
+  val_every: 1
+  seed: 0

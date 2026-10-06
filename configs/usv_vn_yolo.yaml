@@ -1,0 +1,9 @@
+# Dataset YOLO (Ultralytics) cho USV-VN — đã chia theo thời gian (tools/resplit_by_time.py)
+# Local:  yolo detect train data=configs/usv_vn_yolo.yaml model=yolov8n.pt imgsz=640
+# Kaggle: thêm data.path override hoặc sửa `path` thành /kaggle/input/<tên dataset>
+path: ../data/usv_vn
+train: train/images
+val: valid/images
+test: test/images
+names:
+  0: obstacle

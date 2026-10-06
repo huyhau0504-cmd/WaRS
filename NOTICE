@@ -1,0 +1,7 @@
+WaRS
+
+Phần mô hình, hàm loss và dữ liệu MaSTr1325 (wars/models/, wars/losses.py, wars/data/mastr.py,
+wars/data/transforms.py, configs/mastr1325/*.txt) được chuyển thể từ:
+  - eWaSR  https://github.com/tersekmatija/eWaSR  (Apache-2.0)
+  - WaSR   https://github.com/lojzezust/WaSR       (Apache-2.0)
+Bản giấy phép gốc: third_party/LICENSE-eWaSR

@@ -1,0 +1,4 @@
+# Raspberry Pi 5: HailoRT Python cài bằng `sudo apt install hailo-all`.
+# Tạo venv với --system-site-packages để thấy được hailo_platform.
+numpy
+opencv-python
