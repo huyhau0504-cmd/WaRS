@@ -24,3 +24,6 @@ hailo/build/
 *.har
 *.hef
 dist/
+
+# Kênh phối hợp planner ↔ Claude Code (chỉ dùng cục bộ)
+.coord/
