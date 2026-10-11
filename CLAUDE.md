@@ -13,11 +13,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Nơi | Việc | Ghi chú |
 |---|---|---|
 | Laptop Ubuntu 26.04 (RTX 3050 4GB) | viết code, test, vẽ nhãn, đánh giá | `.venv/` (Python 3.14, **torch CPU**). `source .venv/bin/activate` |
-| Kaggle (GPU) | huấn luyện eWaSR/eWaSR-H, YOLOv8n | [notebooks/kaggle_train.ipynb](notebooks/kaggle_train.ipynb) clone repo từ GitHub; dữ liệu là Kaggle private dataset |
+| Kaggle (GPU) | huấn luyện eWaSR/eWaSR-H, YOLOv8n | [notebooks/kaggle_train.ipynb](notebooks/kaggle_train.ipynb) (4 ô, không sửa) clone repo rồi gọi `tools/kaggle_run.py`; chọn thí nghiệm bằng [configs/kaggle_run.yaml](configs/kaggle_run.yaml). Dữ liệu: private dataset `hauhuytran/mastr1325`, `hauhuytran/usv-vn`. Notebook trên Kaggle **không** liên kết GitHub |
 | Docker "Hailo AI Software Suite" trên laptop | DFC: parse/optimize/compile, giả lập INT8 | DFC cần Python 3.10 và không hỗ trợ chính thức Ubuntu 26.04 → luôn chạy trong Docker |
 | Raspberry Pi 5 | chạy HEF bằng HailoRT | `sudo apt install hailo-all`; chỉ cần numpy + opencv |
 
-Không có pytest. Sau mỗi thay đổi, chạy `python tools/smoke_test.py` (CPU, ~40 s): train → resume → export ONNX → predict PyTorch/ONNX → evaluate trên dữ liệu giả (`wars/data/synthetic.py`) và 4 ảnh test USV-VN. `--models all` chạy mọi biến thể (~2 phút), `--keep` giữ thư mục tạm để xem log. Không bấm Save Version trên Kaggle khi smoke test chưa xanh.
+Không có pytest. Sau mỗi thay đổi, chạy `python tools/smoke_test.py` (CPU, ~1 phút): train → resume → export ONNX → predict PyTorch/ONNX → evaluate trên dữ liệu giả (`wars/data/synthetic.py`) và 4 ảnh test USV-VN, rồi chạy thử `tools/kaggle_run.py`. `--models all` chạy mọi biến thể (~2 phút), `--keep` giữ thư mục tạm để xem log. Không bấm Save Version trên Kaggle khi smoke test chưa xanh.
 
 ## Lệnh thường dùng
 
@@ -69,6 +69,8 @@ Trọng số eWaSR chính thức (không IMU): `curl -L -o weights/ewasr_resnet1
 - `resize_like`/`_pool_to` ép shape về `int` và dùng `scale_factor` nguyên / AvgPool kernel cố định để ONNX có shape tĩnh, dạng mà DFC dễ nhận. H, W đầu vào phải chia hết cho 32.
 
 **Huấn luyện:** siêu tham số gốc của WaSR/eWaSR (RMSprop lr 1e-6, decoder ×10, bias ×20, poly decay; focal loss + water-obstacle separation loss λ=0.01 trên đặc trưng layer3). Cấu hình YAML kế thừa qua `base:` ([configs/base.yaml](configs/base.yaml)). Kaggle không giữ `/kaggle/working` giữa các phiên: dùng `--time-limit-h`, Save Version, rồi Add Input output cũ để chạy tiếp từ `last.pt`.
+
+**Chạy trên Kaggle:** sửa `configs/kaggle_run.yaml` (danh sách `runs`: `name`, `kind: seg|yolo`, `config`, `set`), chạy smoke test, push lên `main`, rồi Save Version. `tools/kaggle_run.py` tự tìm dữ liệu dưới `/kaggle/input` (MaSTr1325 theo `*m.png`, USV-VN theo `<split>/images/left_*.jpg`; thiếu USV-VN chỉ cảnh báo), chạy tiếp run nào có `runs/<name>/last.pt` trong input, chạy song song mỗi GPU một run (T4×2 → 2 run), sau đó export ONNX và đánh giá USV-VN test. Mỗi run ghi `runs/<name>/{train.log,run_info.json}` (commit, cấu hình gộp, GPU, giây/epoch, best mIoU, trạng thái `done|time_limit|failed`); tổng hợp ở `STATUS.json` và dòng cuối `KAGGLE_RUN_STATUS: ok|partial|failed`. Mã thoát khác 0 chỉ khi không run nào có checkpoint. Thử cục bộ: `python tools/kaggle_run.py --input-root <dir> --work <dir> --run-config <yaml>`.
 
 **Module không phụ thuộc torch:** `wars/constants.py`, `wars/postprocess.py`, `wars/data/usv_vn.py`, `wars/data/mods.py`, `wars/eval/` — được `pi/` và `hailo/` import (Pi và Docker DFC không chắc có torch/albumentations). Không thêm import torch vào các file này.
 

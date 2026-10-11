@@ -5,8 +5,11 @@
     python tools/smoke_test.py --keep          # giữ thư mục tạm để xem log từng bước
 
 Dùng dữ liệu giả (wars/data/synthetic.py) ở 192×256. Bước predict dùng 4 ảnh đầu của
-data/usv_vn/test nếu có (khi đó chạy thêm bước evaluate), không thì dùng ảnh giả.
+data/usv_vn/test nếu có (khi đó chạy thêm bước evaluate), không thì dùng ảnh giả. Bước cuối chạy
+tools/kaggle_run.py với một run 1 epoch trên dữ liệu giả.
 In bảng PASS/FAIL/SKIP (SKIP = bước trước nó đã FAIL); thoát mã 1 nếu có bước FAIL.
+Thư mục tạm nằm trong runs/ (không dùng /tmp vì có thể là tmpfs trong RAM; mỗi mô hình sinh ~1,4 GB
+checkpoint, được xóa ngay sau khi kiểm xong trừ khi --keep).
 """
 import argparse
 import csv
@@ -139,6 +142,41 @@ def smoke_model(name, tmp, data, pred_src, results):
         results.append((name, step, status, time.time() - t0, detail))
 
 
+def smoke_kaggle_run(tmp, name, results):
+    """tools/kaggle_run.py: một run 1 epoch trên dữ liệu giả, không có USV-VN."""
+    t0 = time.time()
+    try:
+        make_mastr_like(tmp / "kaggle_input" / "mastr", n=8, size=SIZE, seed=1)
+        run_cfg = tmp / "kaggle_run.yaml"
+        sets = [f"model.input_size=[{SIZE[0]},{SIZE[1]}]", "train.batch_size=2", "train.workers=0",
+                "train.amp=false", "model.init_weights=null", "train.epochs=1"]
+        run_cfg.write_text(yaml_dump({"runs": [{"name": "smoke", "kind": "seg", "config": "configs/base.yaml",
+                                                "set": [f"model.name={name}", *sets]}],
+                                      "time_limit_h": 1, "export_onnx": True, "eval_usv": True}))
+        work = tmp / "kaggle_work"
+        log = run(["tools/kaggle_run.py", "--input-root", tmp / "kaggle_input", "--work", work,
+                   "--run-config", run_cfg], tmp / "kaggle_run.log")
+        status = re.findall(r"^KAGGLE_RUN_STATUS: (\w+)$", log, re.M)
+        check(status and status[-1] == "ok", f"KAGGLE_RUN_STATUS: {status[-1] if status else 'không có'}")
+        for f in ("best.pth", "metrics.csv", "train.log", "run_info.json", f"smoke_{SIZE[0]}x{SIZE[1]}.onnx"):
+            check((work / "runs/smoke" / f).exists(), f"thiếu runs/smoke/{f}")
+        check((work / "STATUS.json").exists(), "thiếu STATUS.json")
+        results.append(("runner", "kaggle_run", "PASS", time.time() - t0, "STATUS ok"))
+    except StepFailed as e:
+        results.append(("runner", "kaggle_run", "FAIL", time.time() - t0, str(e)))
+
+
+def yaml_dump(obj):
+    import yaml
+    return yaml.safe_dump(obj, allow_unicode=True, sort_keys=False)
+
+
+def drop_checkpoints(d):
+    for p in Path(d).rglob("*"):
+        if p.suffix in (".pt", ".pth", ".onnx"):
+            p.unlink()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--models", default="ewasr_h", help="tên biến thể, cách nhau bằng dấu phẩy, hoặc 'all'")
@@ -147,7 +185,8 @@ def main():
     names = list(MODELS) if args.models == "all" else args.models.split(",")
 
     t_start = time.time()
-    tmp = Path(tempfile.mkdtemp(prefix="wars_smoke_"))
+    (ROOT / "runs").mkdir(exist_ok=True)
+    tmp = Path(tempfile.mkdtemp(prefix="_smoke_", dir=ROOT / "runs"))
     try:
         data = make_mastr_like(tmp / "mastr", n=8, size=SIZE)
         usv_images = list_images(ROOT / "data/usv_vn", "test")[:N_PRED]
@@ -157,6 +196,9 @@ def main():
         results = []
         for name in names:
             smoke_model(name, tmp, data, pred_src, results)
+            if not args.keep:
+                drop_checkpoints(tmp / name)
+        smoke_kaggle_run(tmp, names[0], results)
     finally:
         if args.keep:
             print(f"Giữ thư mục tạm: {tmp}")

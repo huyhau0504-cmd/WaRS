@@ -1,0 +1,15 @@
+# Sửa file này rồi push; trên Kaggle chỉ cần Save Version (notebooks/kaggle_train.ipynb).
+# Mỗi run ghi vào /kaggle/working/runs/<name>. Trên T4×2 hai run seg chạy song song, mỗi run một GPU.
+# Chạy tiếp: Add Input output của version trước — run nào có runs/<name>/last.pt sẽ tự chạy tiếp.
+runs:
+  - name: smoke_ewasr_h          # output: /kaggle/working/runs/<name>
+    kind: seg                    # seg | yolo
+    config: configs/ewasr_h.yaml
+    set: ["train.epochs=2", "model.init_weights=null"]
+  # Ví dụ run YOLOv8n (set = tham số CLI của Ultralytics):
+  # - name: yolov8n_usv_vn
+  #   kind: yolo
+  #   set: ["epochs=100", "imgsz=640"]
+time_limit_h: 11                 # dừng an toàn trước giới hạn 12 giờ
+export_onnx: true
+eval_usv: true                   # thiếu dataset USV-VN thì cảnh báo và bỏ qua, không lỗi
