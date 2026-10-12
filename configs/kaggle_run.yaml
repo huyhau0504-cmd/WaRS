@@ -1,12 +1,24 @@
 # Sửa file này rồi push; trên Kaggle chỉ cần Save Version (notebooks/kaggle_train.ipynb).
 # Mỗi run ghi vào /kaggle/working/runs/<name>. Trên T4×2 hai run seg chạy song song, mỗi run một GPU.
 # Chạy tiếp: Add Input output của version trước — run nào có runs/<name>/last.pt sẽ tự chạy tiếp.
+#
+# E1/E2 (PLAN.md, ma trận thí nghiệm): cùng giao thức, cùng khởi tạo backbone ImageNet (D3),
+# 100 epoch theo configs/base.yaml.
 runs:
-  - name: smoke_ewasr_h          # output: /kaggle/working/runs/<name>
+  - name: e1_ewasr               # output: /kaggle/working/runs/<name>
     kind: seg                    # seg | yolo
+    config: configs/ewasr.yaml
+    set: ["model.init_weights=null"]
+  - name: e2_ewasr_h
+    kind: seg
     config: configs/ewasr_h.yaml
-    set: ["train.epochs=2", "model.init_weights=null"]
-  # Ví dụ run YOLOv8n (set = tham số CLI của Ultralytics):
+    set: ["model.init_weights=null"]   # bỏ warm-start mặc định của ewasr_h.yaml (đó là E2w)
+  # Smoke trước khi tốn GPU:
+  # - name: smoke_ewasr_h
+  #   kind: seg
+  #   config: configs/ewasr_h.yaml
+  #   set: ["train.epochs=2", "model.init_weights=null"]
+  # Run YOLOv8n (set = tham số CLI của Ultralytics):
   # - name: yolov8n_usv_vn
   #   kind: yolo
   #   set: ["epochs=100", "imgsz=640"]
