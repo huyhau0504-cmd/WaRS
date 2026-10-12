@@ -13,11 +13,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Nơi | Việc | Ghi chú |
 |---|---|---|
 | Laptop Ubuntu 26.04 (RTX 3050 4GB) | viết code, test, vẽ nhãn, đánh giá | `.venv/` (Python 3.14, **torch CPU**). `source .venv/bin/activate` |
-| Kaggle (GPU) | huấn luyện eWaSR/eWaSR-H, YOLOv8n | [notebooks/kaggle_train.ipynb](notebooks/kaggle_train.ipynb) clone repo từ GitHub; dữ liệu là Kaggle private dataset |
+| Kaggle (GPU) | huấn luyện eWaSR/eWaSR-H, YOLOv8n | [notebooks/kaggle_train.ipynb](notebooks/kaggle_train.ipynb) (4 ô, không sửa) clone repo rồi gọi `tools/kaggle_run.py`; chọn thí nghiệm bằng [configs/kaggle_run.yaml](configs/kaggle_run.yaml). Dữ liệu: private dataset `hauhuytran/mastr1325`, `hauhuytran/usv-vn`. Notebook trên Kaggle **không** liên kết GitHub |
 | Docker "Hailo AI Software Suite" trên laptop | DFC: parse/optimize/compile, giả lập INT8 | DFC cần Python 3.10 và không hỗ trợ chính thức Ubuntu 26.04 → luôn chạy trong Docker |
 | Raspberry Pi 5 | chạy HEF bằng HailoRT | `sudo apt install hailo-all`; chỉ cần numpy + opencv |
 
-Không có test suite. Kiểm tra thay đổi bằng cách chạy script thật trên dữ liệu nhỏ (xem các lệnh dưới).
+Không có pytest. Sau mỗi thay đổi, chạy `python tools/smoke_test.py` (CPU, ~1 phút): train → resume → export ONNX → predict PyTorch/ONNX → evaluate trên dữ liệu giả (`wars/data/synthetic.py`) và 4 ảnh test USV-VN, rồi chạy thử `tools/kaggle_run.py`. `--models all` chạy mọi biến thể (~2 phút), `--keep` giữ thư mục tạm để xem log. Không bấm Save Version trên Kaggle khi smoke test chưa xanh.
 
 ## Lệnh thường dùng
 
@@ -30,6 +30,7 @@ python tools/train.py --config configs/ewasr_h.yaml --out runs/ewasr_h --set tra
 python tools/predict.py --model ewasr --weights weights/ewasr_resnet18.pth --split test --out preds/ewasr --vis
 python tools/predict.py --onnx exports/ewasr_h_384x512.onnx --split test --out preds/ewasr_h_onnx
 python tools/evaluate_usv.py --pred-masks preds/ewasr/masks --split test --size-edges 56 70
+python tools/yolo_predict.py --weights runs/yolo/usv_vn/weights/best.pt --split test --out preds/yolov8n   # → boxes.json, conf thấp 0.01, lọc lại bằng --score-thr khi đánh giá
 python tools/evaluate_usv.py --pred-boxes preds/yolov8n/boxes.json --split test --size-edges 56 70
 
 # MODS: ghi mask màu theo sequence, chấm bằng MODS evaluation toolkit (github.com/bborja/mods_evaluation)
@@ -69,6 +70,8 @@ Trọng số eWaSR chính thức (không IMU): `curl -L -o weights/ewasr_resnet1
 
 **Huấn luyện:** siêu tham số gốc của WaSR/eWaSR (RMSprop lr 1e-6, decoder ×10, bias ×20, poly decay; focal loss + water-obstacle separation loss λ=0.01 trên đặc trưng layer3). Cấu hình YAML kế thừa qua `base:` ([configs/base.yaml](configs/base.yaml)). Kaggle không giữ `/kaggle/working` giữa các phiên: dùng `--time-limit-h`, Save Version, rồi Add Input output cũ để chạy tiếp từ `last.pt`.
 
+**Chạy trên Kaggle:** sửa `configs/kaggle_run.yaml` (danh sách `runs`: `name`, `kind: seg|yolo`, `config`, `set`), chạy smoke test, push lên `main`, rồi Save Version. `tools/kaggle_run.py` tự tìm dữ liệu dưới `/kaggle/input` (MaSTr1325 theo `*m.png`, USV-VN theo `<split>/images/left_*.jpg`; thiếu USV-VN chỉ cảnh báo), chạy tiếp run nào có `runs/<name>/last.pt` trong input, chạy song song mỗi GPU một run (T4×2 → 2 run), sau đó export ONNX và đánh giá USV-VN test. Mỗi run ghi `runs/<name>/{train.log,run_info.json}` (commit, cấu hình gộp, GPU, giây/epoch, best mIoU, trạng thái `done|time_limit|failed`); tổng hợp ở `STATUS.json` và dòng cuối `KAGGLE_RUN_STATUS: ok|partial|failed`. Mã thoát khác 0 chỉ khi không run nào có checkpoint. Thử cục bộ: `python tools/kaggle_run.py --input-root <dir> --work <dir> --run-config <yaml>`.
+
 **Module không phụ thuộc torch:** `wars/constants.py`, `wars/postprocess.py`, `wars/data/usv_vn.py`, `wars/data/mods.py`, `wars/eval/` — được `pi/` và `hailo/` import (Pi và Docker DFC không chắc có torch/albumentations). Không thêm import torch vào các file này.
 
 **Mã Hailo/HailoRT** (`hailo/*.py`, `pi/run.py`) viết theo API DFC 3.x / HailoRT 4.x nhưng **chưa được chạy thật** — lần đầu dùng cần đối chiếu với phiên bản đã cài.
@@ -80,6 +83,15 @@ Trọng số eWaSR chính thức (không IMU): `curl -L -o weights/ewasr_resnet1
 - Tiêu chí chính là **coverage** (kiểu MODS), dùng chung cho phân đoạn và YOLO (box YOLO được tô thành mask). Tiêu chí IoU chỉ là phụ: camera đặt sát mặt nước nên vật cản đè lên dải bờ trong ảnh, mask phân đoạn dính liền với bờ, quy về box thì IoU thấp dù phát hiện đúng.
 - FP/Precision/F1 chỉ tính được cho ảnh đã có mép nước trong `water_edges.json` (vẽ phía sau vật cản động, như MODS); thiếu thì chỉ có Recall. Recall đơn lẻ dễ gây hiểu nhầm: eWaSR chính thức zero-shot đạt recall 141/141 trên test nhưng báo động sai nhiều ở bóng phản chiếu của bờ.
 - Theo ngưỡng COCO, mọi box valid/test đều rơi vào "medium" → dùng `--size-edges 56 70` khi phân tích theo kích thước. Ngưỡng `--coverage-thr 0.5` cần đối chiếu với MODS toolkit trước khi đưa số vào bài báo.
+
+## Phối hợp với planner (`.coord/`)
+
+Dự án có một Claude khác làm **planner**: lập lộ trình, viết đề bài task, review code, kích hoạt huấn luyện trên Kaggle. Claude Code trong repo này là bên thực thi.
+
+- Đầu mỗi phiên, đọc `.coord/README.md` rồi `.coord/PLAN.md` (mục **Hiện tại**) và làm theo vòng lặp ở đó: nhận task trong `.coord/tasks/`, hỏi qua `.coord/INBOX.md`, báo cáo vào `.coord/reports/`.
+- `.coord/` không nằm trong git nên Glob/Grep bỏ qua nó — mở bằng đường dẫn trực tiếp.
+- Planner không có shell trên laptop và không push được: mọi lệnh git do Claude Code chạy. Làm trên nhánh `task/TNN-<slug>`, chỉ merge vào `main` sau khi planner ghi `APPROVED`.
+- Yêu cầu trực tiếp của người dùng luôn được ưu tiên hơn file trong `.coord/`.
 
 ## Nguồn gốc mã
 

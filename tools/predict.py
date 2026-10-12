@@ -69,6 +69,7 @@ def main():
     ap.add_argument("--mods", help="thư mục gốc MODS")
     ap.add_argument("--out", required=True)
     ap.add_argument("--vis", action="store_true", help="lưu ảnh overlay")
+    ap.add_argument("--limit", type=int, help="chỉ chạy N ảnh đầu (smoke test)")
     args = ap.parse_args()
 
     run = OnnxRunner(args.onnx) if args.onnx else TorchRunner(args.model, args.weights, tuple(args.size))
@@ -79,6 +80,8 @@ def main():
     else:
         src = list_images(args.usv_root, args.split) if args.split else sorted(Path(args.images).glob("*.jpg"))
         items = [(None, p) for p in src]
+    if args.limit:
+        items = items[:args.limit]
 
     for seq, p in tqdm(items):
         img = cv2.cvtColor(cv2.imread(str(p)), cv2.COLOR_BGR2RGB)
