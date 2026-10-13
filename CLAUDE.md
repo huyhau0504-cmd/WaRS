@@ -48,8 +48,10 @@ python hailo/infer_emulator.py --har hailo/build/ewasr_h_o2_quantized.har --ctx 
 python3 pi/run.py --hef ewasr_h_384x512.hef --split test --out results/ewasr_h_pi --hfov <độ>
 hailortcli benchmark ewasr_h_384x512.hef   # FPS thuần của HEF
 
-# Vẽ mép nước cho tập test (cần cho FP/Precision/F1)
+# Vẽ mép nước + đường chân trời (Tab đổi đường, c chép ảnh trước, m xem trước mask) → water_edges.json (FP/F1) + skylines.json
 python tools/annotate_water_edge.py --split test
+# Ghép mask kiểu MaSTr1325 (0/1/2/4) từ 2 đường + GrabCut trong hộp YOLO → <split>/masks/<stem>m.png, mask_list.txt
+python tools/make_usv_masks.py --splits test --vis
 ```
 
 Trọng số eWaSR chính thức (không IMU): `curl -L -o weights/ewasr_resnet18.pth https://github.com/tersekmatija/eWaSR/releases/download/0.1.0/ewasr_resnet18.pth`.

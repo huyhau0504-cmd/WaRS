@@ -10,6 +10,7 @@ __pycache__/
 !/data/usv_vn/
 /data/usv_vn/*
 !/data/usv_vn/water_edges.json
+!/data/usv_vn/skylines.json
 
 # Sản phẩm sinh ra
 weights/
