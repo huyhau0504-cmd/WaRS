@@ -18,10 +18,17 @@ Hai file JSON được ghi sau mỗi ảnh nên có thể dừng và làm tiếp
 """
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
-import cv2
+# OpenCV bản pip đi kèm Qt nhưng không kèm font → hàng loạt cảnh báo QFont. Trỏ Qt tới font hệ thống.
+for _d in ("/usr/share/fonts/truetype/dejavu", "/usr/share/fonts/truetype", "/usr/share/fonts"):
+    if os.path.isdir(_d):
+        os.environ.setdefault("QT_QPA_FONTDIR", _d)
+        break
+
+import cv2  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from wars.data.usv_masks import compose_mask, overlay_mask  # noqa: E402
