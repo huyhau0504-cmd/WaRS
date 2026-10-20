@@ -1,12 +1,17 @@
 from .ewasr import EWaSR
 
 # Các biến thể dùng trong đề tài. Chữ cái mixer: C = ARM (kênh), S = spatial mean/max (gốc),
-# D = depthwise spatial gate (eWaSR-H). Thêm biến thể mới cho ablation tại đây.
+# D = depthwise spatial gate (eWaSR-H). mixer_mlp: chuỗi 0/1 theo từng khối feature mixer — khối nào giữ
+# nhánh MLP (mặc định: tất cả). Thêm biến thể mới cho ablation tại đây.
 MODELS = {
     "ewasr": dict(mixer="CCCCSS", enricher="SS"),    # eWaSR gốc, nạp được trọng số chính thức
     "ewasr_h": dict(mixer="CCCCDD", enricher="DD"),  # eWaSR-H thân thiện Hailo
     "ewasr_c": dict(mixer="CCCCCC", enricher="CC"),  # ablation: chỉ attention theo kênh
     "ewasr_h_p": dict(mixer="CCCCDD", enricher="DD", project=True),  # eWaSR-H, decoder giảm kênh
+    # mixer-lite (T08, C1): chỉ mixer 0 có MLP. Trong trọng số eWaSR chính thức γ₂ của mixer 1–5 ≈ 1e-40
+    # (MLP đã chết) → bỏ hẳn giảm ~37M tham số và số context trên Hailo-8L
+    "ewasr_lite": dict(mixer="CCCCSS", enricher="SS", mixer_mlp="100000"),    # S-lite (chính)
+    "ewasr_h_lite": dict(mixer="CCCCDD", enricher="DD", mixer_mlp="100000"),  # D-lite (ablation)
 }
 
 

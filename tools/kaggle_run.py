@@ -54,6 +54,8 @@ def find_data(input_root):
     root = Path(input_root)
     mastr = None
     for mask in root.rglob("*m.png"):
+        if mask.parents[1].name in SPLITS:
+            continue  # mask USV-VN (<split>/masks/left_XXXXm.png, tools/make_usv_masks.py), không phải MaSTr1325
         img = next(root.rglob(mask.name[:-5] + ".jpg"), None)
         if img is None:
             continue
