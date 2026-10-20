@@ -51,17 +51,34 @@ def water_edge_from_mask(mask):
     return edge
 
 
-def extract_obstacles(mask, min_area=20, hfov_deg=None, edge=None):
-    """Tách các vật cản nằm trên mặt nước từ mask.
+def shoreline_from_edge(edge, width_frac=0.2):
+    """Làm phẳng mép nước thành đường bờ: phép mở hình thái 1-D (min rồi max theo cửa sổ) trên hồ sơ
+    hàng, xóa các chỗ lõm xuống hẹp hơn `width_frac`·W. Các chỗ lõm đó là nơi vật cản đứng trước bờ
+    che mặt nước — khi camera đặt thấp, vật cản dính liền với dải bờ trong ảnh và mép nước thô luồn
+    xuống dưới nó."""
+    w = len(edge)
+    k = max(3, int(w * width_frac) | 1)
+    prof = edge.astype(np.float32)[None]
+    ker = np.ones((1, k), np.uint8)
+    opened = cv2.dilate(cv2.erode(prof, ker, borderType=cv2.BORDER_REPLICATE), ker,
+                        borderType=cv2.BORDER_REPLICATE)
+    return opened[0].astype(np.int32)
 
-    Một thành phần liên thông lớp vật cản được giữ nếu đáy của nó nằm dưới mép nước
-    (`edge` từ water_edge_from_mask nếu không truyền vào). Trả về list dict:
+
+def extract_obstacles(mask, min_area=20, hfov_deg=None, edge=None, shore_width_frac=0.2):
+    """Tách các vật cản trên mặt nước từ mask.
+
+    Vật cản = phần lớp vật cản nằm **dưới** đường bờ (`edge`; mặc định là mép nước ước lượng đã làm
+    phẳng bằng shoreline_from_edge). Nhờ vậy vật cản dính liền với dải bờ trong ảnh vẫn được tách ra,
+    còn bờ/vật cản tĩnh phía xa bị bỏ. bbox và area chỉ tính phần dưới đường bờ. Trả về list dict:
     bbox [x1,y1,x2,y2], area, bottom (x,y) và bearing_deg (nếu biết góc nhìn ngang camera).
     """
     h, w = mask.shape
     if edge is None:
-        edge = water_edge_from_mask(mask)
-    n, lab, stats, _ = cv2.connectedComponentsWithStats((mask == OBSTACLE).astype(np.uint8), connectivity=8)
+        edge = shoreline_from_edge(water_edge_from_mask(mask), shore_width_frac)
+    below = np.arange(h)[:, None] > np.asarray(edge)[None, :]
+    obst = ((mask == OBSTACLE) & below).astype(np.uint8)
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(obst, connectivity=8)
     out = []
     for i in range(1, n):
         x, y, bw, bh, area = stats[i]
@@ -70,8 +87,6 @@ def extract_obstacles(mask, min_area=20, hfov_deg=None, edge=None):
         ys, xs = np.nonzero(lab[y:y + bh, x:x + bw] == i)
         by = y + ys.max()
         bx = x + int(np.median(xs[ys == ys.max()]))
-        if by <= edge[bx]:
-            continue  # nằm trên mép nước → bờ/vật cản tĩnh phía xa
         ob = {"bbox": [int(x), int(y), int(x + bw), int(y + bh)], "area": int(area), "bottom": [int(bx), int(by)]}
         if hfov_deg is not None:
             ob["bearing_deg"] = float((bx / w - 0.5) * hfov_deg)
