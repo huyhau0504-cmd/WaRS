@@ -27,6 +27,8 @@ for _d in ("/usr/share/fonts/truetype/dejavu", "/usr/share/fonts/truetype", "/us
     if os.path.isdir(_d):
         os.environ.setdefault("QT_QPA_FONTDIR", _d)
         break
+# Thanh trạng thái Qt của OpenCV tính ra cỡ chữ âm → in "QFont::setPointSizeF ..." liên tục; tắt cảnh báo Qt
+os.environ.setdefault("QT_LOGGING_RULES", "*.debug=false;default.warning=false;qt.qpa.*=false")
 
 import cv2  # noqa: E402
 
