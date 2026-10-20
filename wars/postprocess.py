@@ -72,8 +72,8 @@ def extract_obstacles(mask, min_area=20, hfov_deg=None, edge=None):
         bx = x + int(np.median(xs[ys == ys.max()]))
         if by <= edge[bx]:
             continue  # nằm trên mép nước → bờ/vật cản tĩnh phía xa
-        ob = {"bbox": [int(x), int(y), int(x + bw), int(y + bh)], "area": int(area), "bottom": [bx, int(by)]}
+        ob = {"bbox": [int(x), int(y), int(x + bw), int(y + bh)], "area": int(area), "bottom": [int(bx), int(by)]}
         if hfov_deg is not None:
-            ob["bearing_deg"] = (bx / w - 0.5) * hfov_deg
+            ob["bearing_deg"] = float((bx / w - 0.5) * hfov_deg)
         out.append(ob)
     return out
