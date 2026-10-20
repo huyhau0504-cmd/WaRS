@@ -120,9 +120,10 @@ def main():
             tag = "  TU DONG - chua duyet" if p.stem in auto else ""
             cv2.putText(vis, f"{p.stem}  [{i + 1}/{len(images)}]  da ve/duyet: {n_done}{tag}", (8, 22),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255) if tag else (255, 255, 255), 2)
-            cv2.putText(vis, f"dang ve: {LABELS[cur[0]]}" + ("  (t/Tab doi duong, m xem mask)" if not args.only_edge else ""),
+            need = [LABELS[k] for k in active if len(pts[k]) < 2]
+            cv2.putText(vis, f"dang ve: {LABELS[cur[0]]}" + (f"  | con thieu: {', '.join(need)}" if need else "  | du 2 duong - Enter de luu"),
                         (8, 46), cv2.FONT_HERSHEY_SIMPLEX, 0.55, COLORS[cur[0]], 2)
-            cv2.putText(vis, "Enter/n: luu+anh sau | b: anh truoc | c: chep anh truoc | r: xoa duong | chuot phai: xoa diem | q: thoat",
+            cv2.putText(vis, "Enter/n: xong duong -> duong tiep / luu+anh sau | b: anh truoc | c: chep anh truoc | r: xoa duong | chuot phai: xoa diem | q: thoat",
                         (8, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1)
             cv2.imshow("water edge", vis)
             raw = cv2.waitKeyEx(20)
@@ -140,6 +141,11 @@ def main():
                 preview[0] = not preview[0]
             elif key == ord("h"):
                 show_boxes[0] = not show_boxes[0]
+            elif key in (13, 32, ord("n")) and (missing := [k for k in active if len(pts[k]) < 2]) \
+                    and len(pts[cur[0]]) >= 2:
+                # Đường đang vẽ đã xong nhưng còn đường khác chưa vẽ → tự chuyển sang đường đó, ở lại ảnh này
+                # (không cần phím Tab/t — có thể bị bộ gõ tiếng Việt chặn)
+                cur[0] = missing[0]
             elif key in (13, 32, ord("n"), ord("b"), ord("q"), 27):
                 saved = {k for k in active if len(pts[k]) >= 2}
                 for k in saved:
