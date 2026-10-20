@@ -11,6 +11,7 @@ __pycache__/
 /data/usv_vn/*
 !/data/usv_vn/water_edges.json
 !/data/usv_vn/skylines.json
+!/data/usv_vn/edges_auto.json
 
 # Sản phẩm sinh ra
 weights/
@@ -28,3 +29,9 @@ dist/
 
 # Kênh phối hợp planner ↔ Claude Code (chỉ dùng cục bộ)
 .coord/
+
+# Tệp tạm ở thư mục gốc
+/MaSTr1325_*.zip
+/html.zip
+/compare_grid.jpg
+/doc.txt

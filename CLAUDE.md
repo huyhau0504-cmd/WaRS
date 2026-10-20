@@ -49,7 +49,9 @@ python3 pi/run.py --hef ewasr_h_384x512.hef --split test --out results/ewasr_h_p
 hailortcli benchmark ewasr_h_384x512.hef   # FPS thuần của HEF
 
 # Vẽ mép nước + đường chân trời (Tab đổi đường, c chép ảnh trước, m xem trước mask) → water_edges.json (FP/F1) + skylines.json
-python tools/annotate_water_edge.py --split test
+python tools/annotate_water_edge.py --split test --no-boxes --step 10   # vẽ tay khung mốc (h hiện khung YOLO)
+python tools/interpolate_edges.py --split test                         # tự điền khung giữa bằng nội suy (không dùng mô hình)
+python tools/annotate_water_edge.py --split test --no-boxes --review-auto  # duyệt/sửa khung tự điền
 # Ghép mask kiểu MaSTr1325 (0/1/2/4) từ 2 đường + GrabCut trong hộp YOLO → <split>/masks/<stem>m.png, mask_list.txt
 python tools/make_usv_masks.py --splits test --vis
 ```
@@ -85,6 +87,12 @@ Trọng số eWaSR chính thức (không IMU): `curl -L -o weights/ewasr_resnet1
 - Tiêu chí chính là **coverage** (kiểu MODS), dùng chung cho phân đoạn và YOLO (box YOLO được tô thành mask). Tiêu chí IoU chỉ là phụ: camera đặt sát mặt nước nên vật cản đè lên dải bờ trong ảnh, mask phân đoạn dính liền với bờ, quy về box thì IoU thấp dù phát hiện đúng.
 - FP/Precision/F1 chỉ tính được cho ảnh đã có mép nước trong `water_edges.json` (vẽ phía sau vật cản động, như MODS); thiếu thì chỉ có Recall. Recall đơn lẻ dễ gây hiểu nhầm: eWaSR chính thức zero-shot đạt recall 141/141 trên test nhưng báo động sai nhiều ở bóng phản chiếu của bờ.
 - Theo ngưỡng COCO, mọi box valid/test đều rơi vào "medium" → dùng `--size-edges 56 70` khi phân tích theo kích thước. Ngưỡng `--coverage-thr 0.5` cần đối chiếu với MODS toolkit trước khi đưa số vào bài báo.
+
+## Tài liệu và bài báo
+
+- [docs/design.md](docs/design.md): thiết kế eWaSR-H (công thức, lý do từng khối, *Nhật ký*). Đổi thiết kế mô hình thì cập nhật file này và thêm một dòng vào *Nhật ký*.
+- [docs/paper_outline.md](docs/paper_outline.md): dàn ý bài báo (IEEE 2 cột, tiếng Anh). Chỉ đưa vào bài số liệu có `run_info.json`; không dùng số "kiểm tra sức khỏe" (E1w/E2w, val 26 ảnh).
+- `paper/` (`main.tex`, `refs.bib`): bản LaTeX của bài báo.
 
 ## Phối hợp với planner (`.coord/`)
 

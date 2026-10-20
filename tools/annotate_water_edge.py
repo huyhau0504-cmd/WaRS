@@ -10,7 +10,7 @@ Hai đường, đều vẽ từ trái sang phải, điểm đầu/cuối nên ch
   (tools/make_usv_masks.py). Chỗ không có bờ thì vẽ trùng mép nước.
 Bóng phản chiếu của bờ trên mặt nước tính là nước, nên mép nước nằm ở chân bờ, không ở chân bóng.
 
-Phím: chuột trái = thêm điểm vào đường đang chọn · chuột phải = xóa điểm cuối · Tab/t = đổi đường ·
+Phím (bấm khi cửa sổ ảnh đang được chọn): chuột trái = thêm điểm · chuột phải = xóa điểm cuối · t/Tab = đổi đường ·
 c = chép các đường của ảnh vừa lưu trước đó · r = xóa đường đang chọn · m = bật/tắt xem trước mask ·
 h = ẩn/hiện khung nhãn YOLO ·
 Enter/Space/n = lưu & ảnh sau · b = ảnh trước · q/Esc = lưu & thoát.
@@ -50,12 +50,24 @@ def main():
     ap.add_argument("--only-edge", action="store_true", help="chỉ vẽ mép nước")
     ap.add_argument("--redo", action="store_true", help="mở cả những ảnh đã vẽ")
     ap.add_argument("--no-boxes", action="store_true", help="không vẽ khung nhãn YOLO (bật lại bằng phím h)")
+    ap.add_argument("--step", type=int, default=1,
+                    help="chỉ mở khung mốc: mỗi N khung lấy 1 (+ khung cuối); điền phần còn lại bằng tools/interpolate_edges.py")
+    ap.add_argument("--review-auto", action="store_true",
+                    help="chỉ mở các khung do interpolate_edges.py tự điền để duyệt; Enter = đã duyệt")
+    ap.add_argument("--auto-list", default="data/usv_vn/edges_auto.json", help="danh sách khung tự điền chưa duyệt")
     args = ap.parse_args()
 
     files = {"edge": Path(args.out), "sky": Path(args.skylines)}
     store = {k: load_water_edges(f) for k, f in files.items()}
     active = ("edge",) if args.only_edge else LINES
     images = list_images(args.usv_root, args.split)
+    auto_path = Path(args.auto_list)
+    auto = set(json.loads(auto_path.read_text())) if auto_path.exists() else set()
+    if args.review_auto:
+        images = [p for p in images if p.stem in auto]
+        args.redo = True
+    elif args.step > 1:
+        images = images[::args.step] + ([images[-1]] if (len(images) - 1) % args.step else [])
 
     def done(stem):
         return all(stem in store[k] for k in active)
@@ -104,13 +116,18 @@ def main():
                     cv2.line(vis, tuple(a), tuple(b), COLORS[k], thick)
                 for q in line:
                     cv2.circle(vis, tuple(q), 4 if k == cur[0] else 2, COLORS[k], -1)
-            n_done = sum(done(s.stem) for s in images)
-            cv2.putText(vis, f"{p.stem}  [{i + 1}/{len(images)}]  da ve: {n_done}", (8, 22),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-            cv2.putText(vis, f"dang ve: {LABELS[cur[0]]}" + ("  (Tab doi, m xem mask)" if not args.only_edge else ""),
+            n_done = sum(done(s.stem) and s.stem not in auto for s in images)
+            tag = "  TU DONG - chua duyet" if p.stem in auto else ""
+            cv2.putText(vis, f"{p.stem}  [{i + 1}/{len(images)}]  da ve/duyet: {n_done}{tag}", (8, 22),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255) if tag else (255, 255, 255), 2)
+            cv2.putText(vis, f"dang ve: {LABELS[cur[0]]}" + ("  (t/Tab doi duong, m xem mask)" if not args.only_edge else ""),
                         (8, 46), cv2.FONT_HERSHEY_SIMPLEX, 0.55, COLORS[cur[0]], 2)
+            cv2.putText(vis, "Enter/n: luu+anh sau | b: anh truoc | c: chep anh truoc | r: xoa duong | chuot phai: xoa diem | q: thoat",
+                        (8, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1)
             cv2.imshow("water edge", vis)
-            key = cv2.waitKey(20) & 0xFF
+            raw = cv2.waitKeyEx(20)
+            # Backend Qt trả mã Qt::Key_* (vd. Enter = 0x01000004, Tab = 0x01000001) thay vì mã ASCII
+            key = {0x01000004: 13, 0x01000005: 13, 10: 13, 0x01000001: 9, 0x01000000: 27}.get(raw, raw & 0xFF if raw >= 0 else -1)
             if key in (9, ord("t")) and not args.only_edge:
                 cur[0] = "sky" if cur[0] == "edge" else "edge"
             elif key == ord("c") and prev:
@@ -130,6 +147,9 @@ def main():
                     files[k].write_text(json.dumps(store[k], indent=1))
                 if saved:
                     prev = {k: [list(q) for q in sorted(pts[k])] for k in saved}
+                    if p.stem in auto and all(len(pts[k]) >= 2 for k in active):
+                        auto.discard(p.stem)  # đã được người duyệt/sửa
+                        auto_path.write_text(json.dumps(sorted(auto), indent=1))
                 if key in (ord("q"), 27):
                     i = -1
                 else:
