@@ -22,10 +22,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from wars.constants import MEAN, STD  # noqa: E402
 
 
-def model_script(opt_level, compression_level, extra):
+def model_script(opt_level, compression_level, extra, calib_n):
     lines = [
         f"normalization1 = normalization({MEAN.tolist()}, {STD.tolist()})",
         f"model_optimization_flavor(optimization_level={opt_level}, compression_level={compression_level})",
+        # Mặc định DFC chỉ dùng 64 ảnh đầu để thu thống kê dù truyền nhiều hơn → đặt rõ số ảnh
+        f"model_optimization_config(calibration, calibset_size={calib_n})",
     ]
     if extra:
         lines += Path(extra).read_text().splitlines()
@@ -56,6 +58,8 @@ def main():
     ap.add_argument("--opt-level", type=int, default=2, help="0–1 ≈ PTQ; 2–4 bật thêm QFT (cần GPU)")
     ap.add_argument("--compression-level", type=int, default=0)
     ap.add_argument("--alls-extra", help="file chứa thêm lệnh model script (vd. quantization_param 16-bit)")
+    ap.add_argument("--from-quantized", action="store_true",
+                    help="bỏ qua parse/optimize, biên dịch thẳng từ <out>_quantized.har đã có (khi bước compile bị dừng)")
     args = ap.parse_args()
 
     from hailo_sdk_client import ClientRunner
@@ -63,6 +67,13 @@ def main():
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     name = out.name.replace("-", "_")
+
+    if args.from_quantized:
+        runner = ClientRunner(har=f"{out}_quantized.har", hw_arch=args.hw_arch)
+        hef = runner.compile()
+        Path(f"{out}.hef").write_bytes(hef)
+        print(f"[compile] OK → {out}.hef (từ {out}_quantized.har)")
+        return
 
     runner = ClientRunner(hw_arch=args.hw_arch)
     runner.translate_onnx_model(args.onnx, name)
@@ -74,7 +85,7 @@ def main():
     import onnx
     hw = [d.dim_value for d in onnx.load(args.onnx).graph.input[0].type.tensor_type.shape.dim][2:4]
     calib = load_calib(args.calib_dir, args.calib_n, hw)
-    script = model_script(args.opt_level, args.compression_level, args.alls_extra)
+    script = model_script(args.opt_level, args.compression_level, args.alls_extra, len(calib))
     (out.parent / f"{out.name}.alls").write_text(script)
     runner.load_model_script(script)
     runner.optimize(calib)
