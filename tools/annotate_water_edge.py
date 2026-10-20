@@ -66,6 +66,9 @@ def main():
     if args.review_auto:
         images = [p for p in images if p.stem in auto]
         args.redo = True
+        if not images:
+            raise SystemExit("Không có khung tự điền nào chờ duyệt. Trình tự: vẽ khung mốc (--step 10) → "
+                             f"python tools/interpolate_edges.py --split {args.split} → --review-auto")
     elif args.step > 1:
         images = images[::args.step] + ([images[-1]] if (len(images) - 1) % args.step else [])
 
