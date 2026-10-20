@@ -12,6 +12,7 @@ Bóng phản chiếu của bờ trên mặt nước tính là nước, nên mép
 
 Phím: chuột trái = thêm điểm vào đường đang chọn · chuột phải = xóa điểm cuối · Tab/t = đổi đường ·
 c = chép các đường của ảnh vừa lưu trước đó · r = xóa đường đang chọn · m = bật/tắt xem trước mask ·
+h = ẩn/hiện khung nhãn YOLO ·
 Enter/Space/n = lưu & ảnh sau · b = ảnh trước · q/Esc = lưu & thoát.
 Hai file JSON được ghi sau mỗi ảnh nên có thể dừng và làm tiếp bất cứ lúc nào.
 """
@@ -39,6 +40,7 @@ def main():
     ap.add_argument("--skylines", default="data/usv_vn/skylines.json", help="file đường chân trời")
     ap.add_argument("--only-edge", action="store_true", help="chỉ vẽ mép nước")
     ap.add_argument("--redo", action="store_true", help="mở cả những ảnh đã vẽ")
+    ap.add_argument("--no-boxes", action="store_true", help="không vẽ khung nhãn YOLO (bật lại bằng phím h)")
     args = ap.parse_args()
 
     files = {"edge": Path(args.out), "sky": Path(args.skylines)}
@@ -53,6 +55,7 @@ def main():
     pts = {k: [] for k in LINES}
     cur = [active[0]]
     preview = [False]
+    show_boxes = [not args.no_boxes]
     prev = {}
 
     def on_mouse(ev, x, y, *_):
@@ -83,7 +86,7 @@ def main():
                     mask, _ = compose_mask(img, norm(pts["edge"]), norm(pts["sky"]), boxes)
                     cache = (key, overlay_mask(img, mask))
                 vis = cache[1].copy()
-            for b in boxes:
+            for b in boxes if show_boxes[0] else []:
                 cv2.rectangle(vis, (int(b[0]), int(b[1])), (int(b[2]), int(b[3])), (0, 0, 255), 1)
             for k in active:
                 line = sorted(pts[k])
@@ -109,6 +112,8 @@ def main():
                 pts[cur[0]].clear()
             elif key == ord("m"):
                 preview[0] = not preview[0]
+            elif key == ord("h"):
+                show_boxes[0] = not show_boxes[0]
             elif key in (13, 32, ord("n"), ord("b"), ord("q"), 27):
                 saved = {k for k in active if len(pts[k]) >= 2}
                 for k in saved:
