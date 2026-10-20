@@ -59,7 +59,8 @@ def main():
     ap.add_argument("--compression-level", type=int, default=0)
     ap.add_argument("--alls-extra", help="file chứa thêm lệnh model script (vd. quantization_param 16-bit)")
     ap.add_argument("--from-quantized", action="store_true",
-                    help="bỏ qua parse/optimize, biên dịch thẳng từ <out>_quantized.har đã có (khi bước compile bị dừng)")
+                    help="bỏ qua parse/optimize, biên dịch thẳng từ HAR đã lượng tử hóa (mặc định <out>_quantized.har)")
+    ap.add_argument("--quantized-har", help="HAR đã lượng tử hóa dùng với --from-quantized (vd. của lần compile khác)")
     args = ap.parse_args()
 
     from hailo_sdk_client import ClientRunner
@@ -69,10 +70,19 @@ def main():
     name = out.name.replace("-", "_")
 
     if args.from_quantized:
-        runner = ClientRunner(har=f"{out}_quantized.har", hw_arch=args.hw_arch)
+        har = args.quantized_har or f"{out}_quantized.har"
+        runner = ClientRunner(har=har, hw_arch=args.hw_arch)
+        if args.alls_extra:
+            # chỉ các lệnh có hiệu lực lúc compile (vd. performance_param); lượng tử hóa đã cố định trong HAR
+            extra = [l for l in Path(args.alls_extra).read_text().splitlines()
+                     if l.strip().startswith(("performance_param", "allocator_param", "context_switch_param"))]
+            if extra:
+                # HAR đã lượng tử hóa không cho append; nạp riêng các lệnh compile-time (không đụng lượng tử hóa)
+                runner.load_model_script("\n".join(extra) + "\n")
+                print(f"[compile] thêm model script: {extra}")
         hef = runner.compile()
         Path(f"{out}.hef").write_bytes(hef)
-        print(f"[compile] OK → {out}.hef (từ {out}_quantized.har)")
+        print(f"[compile] OK → {out}.hef (từ {har})")
         return
 
     runner = ClientRunner(hw_arch=args.hw_arch)
