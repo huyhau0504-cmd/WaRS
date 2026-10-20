@@ -158,16 +158,22 @@ TOKEN_MIXERS = {"C": ARMMixer, "S": SpatialAttentionMixer, "D": DWSpatialMixer}
 
 
 class MetaFormerBlock(nn.Module):
-    def __init__(self, dim, token_mixer, mlp_ratio=4.0, layer_scale_init_value=1e-5):
+    """use_mlp=False: bỏ hẳn nhánh MLP (không tạo norm2/mlp/layer_scale_2) — biến thể mixer-lite.
+    Tên các tham số còn lại giữ như bản gốc để nạp trọng số eWaSR bằng strict=False."""
+
+    def __init__(self, dim, token_mixer, mlp_ratio=4.0, layer_scale_init_value=1e-5, use_mlp=True):
         super().__init__()
+        self.use_mlp = use_mlp
         self.norm1 = nn.BatchNorm2d(dim)
         self.token_mixer = token_mixer(dim=dim)
-        self.norm2 = nn.BatchNorm2d(dim)
-        self.mlp = Mlp(in_features=dim, hidden_features=int(dim * mlp_ratio))
         self.layer_scale_1 = nn.Parameter(layer_scale_init_value * torch.ones(dim))
-        self.layer_scale_2 = nn.Parameter(layer_scale_init_value * torch.ones(dim))
+        if use_mlp:
+            self.norm2 = nn.BatchNorm2d(dim)
+            self.mlp = Mlp(in_features=dim, hidden_features=int(dim * mlp_ratio))
+            self.layer_scale_2 = nn.Parameter(layer_scale_init_value * torch.ones(dim))
 
     def forward(self, x):
         x = x + self.layer_scale_1[:, None, None] * self.token_mixer(self.norm1(x))
-        x = x + self.layer_scale_2[:, None, None] * self.mlp(self.norm2(x))
+        if self.use_mlp:
+            x = x + self.layer_scale_2[:, None, None] * self.mlp(self.norm2(x))
         return x

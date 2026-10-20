@@ -7,7 +7,8 @@ from .layers import SIM, TOKEN_MIXERS, MetaFormerBlock, PyramidPoolAgg, SegHead,
 
 
 class EWaSRDecoder(nn.Module):
-    def __init__(self, num_classes=3, ch=512, ch_sim=256, mixer="CCCCSS", enricher="SS", project=False):
+    def __init__(self, num_classes=3, ch=512, ch_sim=256, mixer="CCCCSS", enricher="SS", project=False,
+                 mixer_mlp=None):
         super().__init__()
         self.ch = [ch, ch // 2, ch // 4, ch // 8]
         self.project = project
@@ -20,7 +21,8 @@ class EWaSRDecoder(nn.Module):
             self.ch = [c // 2 for c in self.ch]
         self.pool_feats = PyramidPoolAgg(2)
         self.metaformers = nn.Sequential(
-            *[MetaFormerBlock(sum(self.ch), token_mixer=TOKEN_MIXERS[m]) for m in mixer]
+            *[MetaFormerBlock(sum(self.ch), token_mixer=TOKEN_MIXERS[m], use_mlp=(mixer_mlp or "1" * len(mixer))[i] == "1")
+              for i, m in enumerate(mixer)]
         ) if mixer else None
         self.metaformers_skip2 = nn.Sequential(
             *[MetaFormerBlock(self.ch[2], token_mixer=TOKEN_MIXERS[m]) for m in enricher]
@@ -62,14 +64,15 @@ class EWaSR(nn.Module):
     Với `return_aux=True` trả thêm đặc trưng layer3 dùng cho separation loss khi huấn luyện.
     """
 
-    def __init__(self, num_classes=3, mixer="CCCCSS", enricher="SS", project=False, pretrained_backbone=True):
+    def __init__(self, num_classes=3, mixer="CCCCSS", enricher="SS", project=False, pretrained_backbone=True,
+                 mixer_mlp=None):
         super().__init__()
         bb = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1 if pretrained_backbone else None)
         self.backbone = IntermediateLayerGetter(
             bb, return_layers={"layer1": "skip1", "layer2": "skip2", "layer3": "aux", "layer4": "out"}
         )
         self.decoder = EWaSRDecoder(num_classes=num_classes, ch=512, mixer=mixer, enricher=enricher,
-                                    project=project)
+                                    project=project, mixer_mlp=mixer_mlp)
 
     def forward(self, image, return_aux=False):
         f = self.backbone(image)

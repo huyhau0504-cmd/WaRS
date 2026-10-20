@@ -2,17 +2,18 @@
 # Mỗi run ghi vào /kaggle/working/runs/<name>. Trên T4×2 hai run seg chạy song song, mỗi run một GPU.
 # Chạy tiếp: Add Input output của version trước — run nào có runs/<name>/last.pt sẽ tự chạy tiếp.
 #
-# E1/E2 (PLAN.md, ma trận thí nghiệm): cùng giao thức, cùng khởi tạo backbone ImageNet (D3),
+# E1/E2 (V6, commit 35dc4f8) và E6/E7 (T08): cùng giao thức, cùng khởi tạo backbone ImageNet (D3),
 # 100 epoch theo configs/base.yaml.
 runs:
-  - name: e1_ewasr               # output: /kaggle/working/runs/<name>
-    kind: seg                    # seg | yolo
+  # T08 (C1 mixer-lite): cùng giao thức E1/E2, chỉ khác feature mixer chỉ còn MLP ở khối 0
+  - name: e6_ewasr_lite          # S-lite (mô hình chính)
+    kind: seg
     config: configs/ewasr.yaml
-    set: ["model.init_weights=null"]
-  - name: e2_ewasr_h
+    set: ["model.name=ewasr_lite", "model.init_weights=null"]
+  - name: e7_ewasr_h_lite        # D-lite (ablation)
     kind: seg
     config: configs/ewasr_h.yaml
-    set: ["model.init_weights=null"]   # bỏ warm-start mặc định của ewasr_h.yaml (đó là E2w)
+    set: ["model.name=ewasr_h_lite", "model.init_weights=null"]
   # Smoke trước khi tốn GPU:
   # - name: smoke_ewasr_h
   #   kind: seg
