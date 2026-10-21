@@ -12,6 +12,7 @@ Chuẩn hóa ImageNet được đưa vào model script (chạy trên chip), nên
 API theo Hailo Dataflow Compiler 3.x — nếu phiên bản DFC khác, đối chiếu với tài liệu DFC đi kèm.
 """
 import argparse
+import gc
 import sys
 from pathlib import Path
 
@@ -101,6 +102,8 @@ def main():
     runner.optimize(calib)
     runner.save_har(f"{out}_quantized.har")
     print(f"[optimize] OK → {out}_quantized.har ({len(calib)} ảnh calibration)")
+    del calib  # 1024 ảnh float32 ≈ 2,4 GB — giải phóng trước khi compile (máy 14 GB từng bị OOM ở bước này)
+    gc.collect()
 
     hef = runner.compile()
     Path(f"{out}.hef").write_bytes(hef)
