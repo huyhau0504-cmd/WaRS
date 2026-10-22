@@ -61,6 +61,8 @@ def main():
     ap.add_argument("--alls-extra", help="file chứa thêm lệnh model script (vd. quantization_param 16-bit)")
     ap.add_argument("--from-quantized", action="store_true",
                     help="bỏ qua parse/optimize, biên dịch thẳng từ HAR đã lượng tử hóa (mặc định <out>_quantized.har)")
+    ap.add_argument("--no-compile", action="store_true",
+                    help="dừng sau optimize (chỉ ghi <out>_quantized.har, dùng cho hailo/infer_emulator.py)")
     ap.add_argument("--quantized-har", help="HAR đã lượng tử hóa dùng với --from-quantized (vd. của lần compile khác)")
     args = ap.parse_args()
 
@@ -104,6 +106,8 @@ def main():
     print(f"[optimize] OK → {out}_quantized.har ({len(calib)} ảnh calibration)")
     del calib  # 1024 ảnh float32 ≈ 2,4 GB — giải phóng trước khi compile (máy 14 GB từng bị OOM ở bước này)
     gc.collect()
+    if args.no_compile:
+        return
 
     hef = runner.compile()
     Path(f"{out}.hef").write_bytes(hef)

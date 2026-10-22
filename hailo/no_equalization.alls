@@ -1,0 +1,2 @@
+model_optimization_config(checker_cfg, batch_norm_checker=False)
+pre_quantization_optimization(equalization, policy=disabled)
