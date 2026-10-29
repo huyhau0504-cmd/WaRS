@@ -60,6 +60,7 @@ def main():
     ap.add_argument("--parse-only", action="store_true")
     ap.add_argument("--calib-dir", nargs="+", default=[], help="một hoặc nhiều thư mục ảnh calibration")
     ap.add_argument("--calib-n", type=int, default=1024)
+    ap.add_argument("--calib-seed", type=int, default=0, help="seed chọn ảnh calibration (đo phương sai lượng tử hóa)")
     ap.add_argument("--opt-level", type=int, default=2, help="0–1 ≈ PTQ; 2–4 bật thêm QFT (cần GPU)")
     ap.add_argument("--compression-level", type=int, default=0)
     ap.add_argument("--alls-extra", help="file chứa thêm lệnh model script (vd. quantization_param 16-bit)")
@@ -103,7 +104,7 @@ def main():
 
     import onnx
     hw = [d.dim_value for d in onnx.load(args.onnx).graph.input[0].type.tensor_type.shape.dim][2:4]
-    calib = load_calib(args.calib_dir, args.calib_n, hw)
+    calib = load_calib(args.calib_dir, args.calib_n, hw, seed=args.calib_seed)
     script = model_script(args.opt_level, args.compression_level, args.alls_extra, len(calib),
                           equalization=not args.no_equalization)
     (out.parent / f"{out.name}.alls").write_text(script)
