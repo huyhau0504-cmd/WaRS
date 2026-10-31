@@ -282,6 +282,7 @@ Nhận xét:
 |---|---|---|
 | 08/10/2026 | Tạo tài liệu. eWaSR-H = eWaSR (ResNet-18, không IMU) với `S`→`D`, upsample ngoài mạng, resize/pool hệ số cố định, chuẩn hóa trên chip | Tương thích Hailo DFC (§2) |
 | 21/10/2026 | Thêm biến thể mixer-lite (`ewasr_lite` S, `ewasr_h_lite` D): feature mixer chỉ giữ MLP ở khối 0 (`mixer_mlp="100000"`), 23,35M tham số so với 60,25M | Trong trọng số eWaSR chính thức γ₂ của mixer 1–5 ≈ 1e-40 (`docs/data/layer_scale.csv`); nạp vào `ewasr_lite` cho đầu ra trùng khít bản đầy đủ. Trên Hailo-8L số context phụ thuộc các MLP này (E1 8 → 6 khi tắt). Quyết định C1 ngày 20/10: giữ S, D thành ablation |
+| 22/10/2026 | Mô hình chính của bài: **D-lite** (`ewasr_h_lite`, E7) = "eWaSR-Lite"; S-lite (`ewasr_lite`) thành ablation "eWaSR-Lite (S-mixer)" | Theo giao thức chính thức (calib 1024 + compiler max) E7 thắng mọi chỉ số: 4 so với 5 context, 28,1 so với 24,9 FPS, đầu-cuối 24,8 so với 22,2. Thứ tự S/D đổi chiều theo trọng số/thiết lập compile, còn bỏ MLP luôn có lợi (+32% với S, +86% với D). Quyết định Q-011 |
 
 ## Tài liệu tham khảo
 

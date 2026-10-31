@@ -12,6 +12,7 @@ Chuẩn hóa ImageNet được đưa vào model script (chạy trên chip), nên
 API theo Hailo Dataflow Compiler 3.x — nếu phiên bản DFC khác, đối chiếu với tài liệu DFC đi kèm.
 """
 import argparse
+import gc
 import sys
 from pathlib import Path
 
@@ -22,13 +23,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from wars.constants import MEAN, STD  # noqa: E402
 
 
-def model_script(opt_level, compression_level, extra, calib_n):
+def model_script(opt_level, compression_level, extra, calib_n, equalization=True):
     lines = [
         f"normalization1 = normalization({MEAN.tolist()}, {STD.tolist()})",
         f"model_optimization_flavor(optimization_level={opt_level}, compression_level={compression_level})",
         # Mặc định DFC chỉ dùng 64 ảnh đầu để thu thống kê dù truyền nhiều hơn → đặt rõ số ảnh
         f"model_optimization_config(calibration, calibset_size={calib_n})",
     ]
+    if not equalization:
+        # Cross-layer equalization nhân/chia hệ số theo kênh qua các MLP có layer scale rất nhỏ (eWaSR đầy đủ)
+        # → khoảng lượng tử phình theo số ảnh calib (E1 calib 1024: 87,8% trùng FP32; tắt: 97,0%) — Q-012
+        lines.append("pre_quantization_optimization(equalization, policy=disabled)")
     if extra:
         lines += Path(extra).read_text().splitlines()
     return "\n".join(lines) + "\n"
@@ -55,11 +60,17 @@ def main():
     ap.add_argument("--parse-only", action="store_true")
     ap.add_argument("--calib-dir", nargs="+", default=[], help="một hoặc nhiều thư mục ảnh calibration")
     ap.add_argument("--calib-n", type=int, default=1024)
+    ap.add_argument("--calib-seed", type=int, default=0, help="seed chọn ảnh calibration (đo phương sai lượng tử hóa)")
     ap.add_argument("--opt-level", type=int, default=2, help="0–1 ≈ PTQ; 2–4 bật thêm QFT (cần GPU)")
     ap.add_argument("--compression-level", type=int, default=0)
     ap.add_argument("--alls-extra", help="file chứa thêm lệnh model script (vd. quantization_param 16-bit)")
     ap.add_argument("--from-quantized", action="store_true",
-                    help="bỏ qua parse/optimize, biên dịch thẳng từ <out>_quantized.har đã có (khi bước compile bị dừng)")
+                    help="bỏ qua parse/optimize, biên dịch thẳng từ HAR đã lượng tử hóa (mặc định <out>_quantized.har)")
+    ap.add_argument("--no-equalization", action="store_true",
+                    help="tắt cross-layer equalization khi lượng tử hóa (xem Q-012)")
+    ap.add_argument("--no-compile", action="store_true",
+                    help="dừng sau optimize (chỉ ghi <out>_quantized.har, dùng cho hailo/infer_emulator.py)")
+    ap.add_argument("--quantized-har", help="HAR đã lượng tử hóa dùng với --from-quantized (vd. của lần compile khác)")
     args = ap.parse_args()
 
     from hailo_sdk_client import ClientRunner
@@ -69,10 +80,19 @@ def main():
     name = out.name.replace("-", "_")
 
     if args.from_quantized:
-        runner = ClientRunner(har=f"{out}_quantized.har", hw_arch=args.hw_arch)
+        har = args.quantized_har or f"{out}_quantized.har"
+        runner = ClientRunner(har=har, hw_arch=args.hw_arch)
+        if args.alls_extra:
+            # chỉ các lệnh có hiệu lực lúc compile (vd. performance_param); lượng tử hóa đã cố định trong HAR
+            extra = [l for l in Path(args.alls_extra).read_text().splitlines()
+                     if l.strip().startswith(("performance_param", "allocator_param", "context_switch_param"))]
+            if extra:
+                # HAR đã lượng tử hóa không cho append; nạp riêng các lệnh compile-time (không đụng lượng tử hóa)
+                runner.load_model_script("\n".join(extra) + "\n")
+                print(f"[compile] thêm model script: {extra}")
         hef = runner.compile()
         Path(f"{out}.hef").write_bytes(hef)
-        print(f"[compile] OK → {out}.hef (từ {out}_quantized.har)")
+        print(f"[compile] OK → {out}.hef (từ {har})")
         return
 
     runner = ClientRunner(hw_arch=args.hw_arch)
@@ -84,13 +104,18 @@ def main():
 
     import onnx
     hw = [d.dim_value for d in onnx.load(args.onnx).graph.input[0].type.tensor_type.shape.dim][2:4]
-    calib = load_calib(args.calib_dir, args.calib_n, hw)
-    script = model_script(args.opt_level, args.compression_level, args.alls_extra, len(calib))
+    calib = load_calib(args.calib_dir, args.calib_n, hw, seed=args.calib_seed)
+    script = model_script(args.opt_level, args.compression_level, args.alls_extra, len(calib),
+                          equalization=not args.no_equalization)
     (out.parent / f"{out.name}.alls").write_text(script)
     runner.load_model_script(script)
     runner.optimize(calib)
     runner.save_har(f"{out}_quantized.har")
     print(f"[optimize] OK → {out}_quantized.har ({len(calib)} ảnh calibration)")
+    del calib  # 1024 ảnh float32 ≈ 2,4 GB — giải phóng trước khi compile (máy 14 GB từng bị OOM ở bước này)
+    gc.collect()
+    if args.no_compile:
+        return
 
     hef = runner.compile()
     Path(f"{out}.hef").write_bytes(hef)
