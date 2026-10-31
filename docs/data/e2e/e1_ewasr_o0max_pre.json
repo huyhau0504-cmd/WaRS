@@ -1,0 +1,61 @@
+{
+  "pre+infer": {
+    "mean_ms": 55.102639885720755,
+    "p95_ms": 57.8258040000037
+  },
+  "post": {
+    "mean_ms": 102.13640719998855,
+    "p95_ms": 167.7990199998476
+  },
+  "total": {
+    "mean_ms": 157.23904708570933,
+    "p95_ms": 223.79903899991405
+  },
+  "mode": "pipelined",
+  "fps_end_to_end": 6.359743451350927,
+  "fps_throughput": 18.053134010908124,
+  "fps_throughput_min": 18.05307744045038,
+  "fps_throughput_max": 18.121306934195125,
+  "frames": 141,
+  "warmup": 1,
+  "preload": true,
+  "cpu_governor": "ondemand",
+  "runs": [
+    {
+      "fps_throughput": 18.121306934195125,
+      "frames": 141,
+      "soc_before": {
+        "temp": "34.0'C",
+        "throttled": "0x0"
+      },
+      "soc_after": {
+        "temp": "36.2'C",
+        "throttled": "0x0"
+      }
+    },
+    {
+      "fps_throughput": 18.05307744045038,
+      "frames": 141,
+      "soc_before": {
+        "temp": "36.2'C",
+        "throttled": "0x0"
+      },
+      "soc_after": {
+        "temp": "35.6'C",
+        "throttled": "0x0"
+      }
+    },
+    {
+      "fps_throughput": 18.053134010908124,
+      "frames": 141,
+      "soc_before": {
+        "temp": "35.6'C",
+        "throttled": "0x0"
+      },
+      "soc_after": {
+        "temp": "34.0'C",
+        "throttled": "0x0"
+      }
+    }
+  ]
+}
