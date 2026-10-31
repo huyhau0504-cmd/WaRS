@@ -1,3 +1,16 @@
+diff --git a/get_evaluation_statistics.py b/get_evaluation_statistics.py
+index f3acb6c..e06e6ab 100644
+--- a/get_evaluation_statistics.py
++++ b/get_evaluation_statistics.py
+@@ -70,7 +70,7 @@ def main():
+     for seq_id in range(num_sequences):
+         # Check if the current sequence was evaluated
+         if results['sequences'][seq_id]['evaluated']:
+-            tmp_rmse = np.zeros((5, 1))
++            tmp_rmse = np.zeros(5)  # [WaRS patch] numpy >= 2: phần tử phải là số, không phải mảng (1,)
+ 
+             num_frames_in_sequence = len(results['sequences'][seq_id]['frames'])
+             num_frames_total      += num_frames_in_sequence
 diff --git a/modb_evaluation.py b/modb_evaluation.py
 index 6fee431..151e45e 100644
 --- a/modb_evaluation.py

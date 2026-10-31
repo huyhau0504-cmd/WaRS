@@ -16,6 +16,7 @@ bằng nearest, nên lưu ở kích thước đầu vào mô hình như WaSR là
 """
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -42,6 +43,16 @@ def ensure_toolkit(path, patch):
         subprocess.run(["git", "-C", str(path), "apply", str(patch)], check=True)
 
 
+def run_stats(args, toolkit, tmp, method, out, summary):
+    """get_evaluation_statistics.py → summary["statistics"] (theo kích thước/loại vật cản); log ở <out>_stats.log."""
+    st = subprocess.run([args.python, "get_evaluation_statistics.py", method, "--config-file", str(tmp / "cfg.yaml")],
+                        cwd=toolkit, capture_output=True, text=True, env={**os.environ, "MPLBACKEND": "Agg"})
+    out.with_name(out.stem + "_stats.log").write_text(st.stdout + st.stderr)
+    sj = tmp / f"results_{method}_summary.json"
+    if sj.exists():
+        summary["statistics"] = json.loads(sj.read_text())
+
+
 def prf(tp, fp, fn):
     pr = tp / (tp + fp) if tp + fp else 0.0
     re = tp / (tp + fn) if tp + fn else 0.0
@@ -58,6 +69,8 @@ def main():
     ap.add_argument("--toolkit", default=str(ROOT / "third_party/mods_evaluation"))
     ap.add_argument("--python", default=str(ROOT / "third_party/.venv-mods/bin/python"))
     ap.add_argument("--stats", action="store_true", help="chạy thêm get_evaluation_statistics.py (theo kích thước/loại)")
+    ap.add_argument("--stats-only", action="store_true",
+                    help="chỉ chạy thống kê trên <out-json>_frames.json đã có (không chấm lại)")
     args = ap.parse_args()
 
     toolkit, pred = Path(args.toolkit), Path(args.pred).resolve()
@@ -74,6 +87,14 @@ def main():
             f"PATHS:\n  RESULTS: '{tmp}'\n  DATASET: '{mods}'\n  DATASET_CALIB: '{mods / 'calibration'}'\n"
             f"  SEGMENTATIONS: '{pred.parent}'\nSEGMENTATIONS:\n  SEQ_FIRST: False\n  INPUT_COLORS:\n{colors}\n"
             "VISUALIZATION:\n  SEQUENCE_PROGRESS: False\n")
+        frames = out.with_name(out.stem + "_frames.json")
+        if args.stats_only:
+            summary = json.loads(out.read_text())
+            (tmp / f"results_{method}.json").write_text(frames.read_text())
+            run_stats(args, toolkit, tmp, method, out, summary)
+            out.write_text(json.dumps(summary, indent=2, ensure_ascii=False))
+            print(f"{method}: thống kê → {out}" if "statistics" in summary else f"{method}: thống kê lỗi, xem log")
+            return
         cmd = [args.python, "modb_evaluation.py", method, "--config-file", str(tmp / "cfg.yaml"),
                "--workers", str(args.workers)]
         if args.sequences:
@@ -96,13 +117,8 @@ def main():
                            "water_land_detection_pct": 100 * s["water_land_tp"] / max(s["water_land_tp"] + s["water_land_fn"], 1)},
         }
         if args.stats:
-            st = subprocess.run([args.python, "get_evaluation_statistics.py", method, "--config-file", str(tmp / "cfg.yaml")],
-                                cwd=toolkit, capture_output=True, text=True)
-            (out.with_name(out.stem + "_stats.log")).write_text(st.stdout + st.stderr)
-            sj = tmp / f"results_{method}_summary.json"
-            if sj.exists():
-                summary["statistics"] = json.loads(sj.read_text())
-        (tmp / f"results_{method}.json").replace(out.with_name(out.stem + "_frames.json"))
+            run_stats(args, toolkit, tmp, method, out, summary)
+        (tmp / f"results_{method}.json").replace(frames)
     out.write_text(json.dumps(summary, indent=2, ensure_ascii=False))
     o, d = summary["obstacles"], summary["danger_zone"]
     print(f"{method}: F1 {100 * o['f1']:.1f}% (Pr {100 * o['precision']:.1f}, Re {100 * o['recall']:.1f}) · "
