@@ -35,3 +35,7 @@ dist/
 /html.zip
 /compare_grid.jpg
 /doc.txt
+
+# Toolkit MODS (clone ở commit ghim, xem tools/eval_mods.py)
+third_party/*
+!third_party/mods_evaluation.patch

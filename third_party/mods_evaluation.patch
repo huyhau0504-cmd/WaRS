@@ -1,0 +1,30 @@
+diff --git a/modb_evaluation.py b/modb_evaluation.py
+index 6fee431..151e45e 100644
+--- a/modb_evaluation.py
++++ b/modb_evaluation.py
+@@ -259,6 +259,9 @@ def run_evaluation():
+             total_overlap_percentages.extend(top)
+             total_overlap_percentages_d.extend(topd)
+ 
++    # [WaRS patch] numpy >= 2 không cho '%d' % mảng 1 phần tử → làm phẳng (6, 1) thành (6,)
++    total_detections = total_detections.ravel()
++
+     overlap_results['overlap_perc_all'] = total_overlap_percentages
+     overlap_results['overlap_perc_dng'] = total_overlap_percentages_d
+ 
+@@ -323,6 +326,15 @@ def run_evaluation():
+     print(table_old.get_string(title="Results for method %s on %d sequence/s" % (args.method, len(sequences))))
+     print(table_new.get_string(title="Results for method %s on %d sequence/s" % (args.method, len(sequences))))
+ 
++    # [WaRS patch] Lưu tổng số liệu (bản gốc chỉ in ra màn hình) để tools/eval_mods.py đọc lại
++    evaluation_results['summary'] = {'tp': int(total_detections[0]), 'fp': int(total_detections[1]),
++                                     'fn': int(total_detections[2]), 'tp_d': int(total_detections[3]),
++                                     'fp_d': int(total_detections[4]), 'fn_d': int(total_detections[5]),
++                                     'we_rmse_px': float(tmp_edge), 'we_overshoot_pct': float(tmp_oshot),
++                                     'we_undershoot_pct': float(tmp_ushot),
++                                     'water_land_tp': float(total_land_detections[0]),
++                                     'water_land_fn': float(total_land_detections[1]),
++                                     'num_sequences': int(len(sequences))}
+     # Write the evaluation results to JSON file
+     write_json_file(cfg.PATHS.RESULTS, args.method, evaluation_results)
+     # Write the overlap results to JSON file
