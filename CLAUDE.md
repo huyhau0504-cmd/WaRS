@@ -6,14 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Dự án
 
-Đồ án + bài báo: phân đoạn vật cản trên mặt nước (nước / trời / vật cản) cho USV, chạy trên Raspberry Pi 5 + **Hailo-8L (13 TOPS)**, dựa trên WaSR/eWaSR. Đề cương, mục tiêu, kế hoạch 8 tuần (07/10 – 06/12/2026): [docs/de_cuong.md](docs/de_cuong.md). Đóng góp chính: eWaSR-H (biến thể thân thiện Hailo), phân tích lượng tử hóa INT8, so sánh với YOLOv8n, đánh giá trên dữ liệu sông Việt Nam (USV-VN).
+Đồ án + bài báo: phân đoạn vật cản trên mặt nước (nước / trời / vật cản) cho USV, chạy trên Raspberry Pi 5 + **Hailo-8L (13 TOPS)**, dựa trên WaSR/eWaSR. Đề cương, mục tiêu, kế hoạch 8 tuần (07/10 – 06/12/2026): [docs/de_cuong.md](docs/de_cuong.md). Đóng góp chính: **eWaSR-Lite** (bỏ MLP thừa của feature mixer + cổng depthwise D; mã `ewasr_h_lite`, E7), phân tích lượng tử hóa INT8 trên Hailo DFC, so sánh với YOLOv8n, đánh giá trên dữ liệu sông Việt Nam (USV-VN).
 
 ## Môi trường
 
 | Nơi | Việc | Ghi chú |
 |---|---|---|
 | Laptop Ubuntu 26.04 (RTX 3050 4GB) | viết code, test, vẽ nhãn, đánh giá | `.venv/` (Python 3.14, **torch CPU**). `source .venv/bin/activate` |
-| Kaggle (GPU) | huấn luyện eWaSR/eWaSR-H, YOLOv8n | [notebooks/kaggle_train.ipynb](notebooks/kaggle_train.ipynb) (4 ô, không sửa) clone repo rồi gọi `tools/kaggle_run.py`; chọn thí nghiệm bằng [configs/kaggle_run.yaml](configs/kaggle_run.yaml). Dữ liệu: private dataset `hauhuytran/mastr1325`, `hauhuytran/usv-vn`. Notebook trên Kaggle **không** liên kết GitHub |
+| Kaggle (GPU) | huấn luyện eWaSR và các biến thể, YOLOv8n | [notebooks/kaggle_train.ipynb](notebooks/kaggle_train.ipynb) (4 ô, không sửa) clone repo rồi gọi `tools/kaggle_run.py`; chọn thí nghiệm bằng [configs/kaggle_run.yaml](configs/kaggle_run.yaml). Dữ liệu: private dataset `hauhuytran/mastr1325`, `hauhuytran/usv-vn`. Notebook trên Kaggle **không** liên kết GitHub |
 | Docker "Hailo AI Software Suite" trên laptop | DFC: parse/optimize/compile, giả lập INT8 | DFC cần Python 3.10 và không hỗ trợ chính thức Ubuntu 26.04 → luôn chạy trong Docker |
 | Raspberry Pi 5 | chạy HEF bằng HailoRT | `sudo apt install hailo-all`; chỉ cần numpy + opencv |
 
@@ -39,14 +39,18 @@ python tools/predict.py --model ewasr_h --weights runs/ewasr_h/best.pth --mods /
 # Xuất ONNX (shape tĩnh, tự so sai số với PyTorch)
 python tools/export_onnx.py --model ewasr_h --weights runs/ewasr_h/best.pth --size 384 512
 
-# Hailo (trong Docker DFC)
-python hailo/compile.py --onnx exports/ewasr_h_384x512.onnx --parse-only --out hailo/build/ewasr_h_parse
-python hailo/compile.py --onnx exports/ewasr_h_384x512.onnx --calib-dir <mastr>/images --opt-level 2 --out hailo/build/ewasr_h_o2
-python hailo/infer_emulator.py --har hailo/build/ewasr_h_o2_quantized.har --ctx quantized --split test --out preds/ewasr_h_int8
+# Hailo (venv DFC: ~/hailo-dfc/.venv/bin/python). Giao thức chính thức (docs/data/README_hailo.md):
+# 64 ảnh calib, tắt equalization, compiler max. Lượng tử hóa và compile tách 2 bước (compile max 1–4 h, dễ OOM trên 14 GB)
+python hailo/compile.py --onnx exports/e7_ewasr_h_lite_384x512.onnx --calib-dir data/mastr1325/images --calib-n 64 --opt-level 0 \
+    --alls-extra hailo/no_bn_checker.alls --no-equalization --no-compile --out hailo/build/e7_c64noeq
+python hailo/compile.py --onnx exports/e7_ewasr_h_lite_384x512.onnx --from-quantized --quantized-har hailo/build/e7_c64noeq_quantized.har \
+    --alls-extra hailo/perf_max.alls --out hailo/build/e7_c64noeqmax
+python hailo/infer_emulator.py --har hailo/build/e7_c64noeq_quantized.har --ctx quantized --split test --out preds/emu/e7
+python tools/compare_masks.py --ref preds/e7_ewasr_h_lite_fp32/masks --split test preds/emu/e7/masks   # INT8 so với FP32
 
 # Raspberry Pi
-python3 pi/run.py --hef ewasr_h_384x512.hef --split test --out results/ewasr_h_pi --hfov <độ>
-hailortcli benchmark ewasr_h_384x512.hef   # FPS thuần của HEF
+python3 pi/run.py --hef hef/e7_c64noeqmax.hef --split test --out results/e7 --hfov <độ>   # 1 lượt làm nóng + 3 lượt đo, trung vị
+hailortcli benchmark -t 15 hef/e7_c64noeqmax.hef   # FPS phần cứng; hailortcli parse-hef → số context
 
 # Vẽ mép nước + đường chân trời (Tab đổi đường, c chép ảnh trước, m xem trước mask) → water_edges.json (FP/F1) + skylines.json
 python tools/annotate_water_edge.py --split test --no-boxes --step 10   # vẽ tay khung mốc (h hiện khung YOLO)
@@ -68,8 +72,8 @@ Trọng số eWaSR chính thức (không IMU): `curl -L -o weights/ewasr_resnet1
 - Đầu ra là logits ở **H/4 × W/4**. Upsample nằm ngoài mô hình (`wars/postprocess.logits_to_mask`: upsample logits rồi mới argmax) để giảm tải cho Hailo.
 
 **Mô hình (`wars/models/`)** là bản port eWaSR không IMU. **Tên thuộc tính giữ y hệt bản gốc** (`backbone`, `decoder.sim1..4`, `metaformers`, `metaformers_skip2`, `seg_head`, `convs_project*`...) để nạp được trọng số chính thức — đã kiểm tra khớp ONNX chính thức (sai số 1.7e-5). Đừng đổi tên chúng.
-- Biến thể đăng ký trong `MODELS` ([wars/models/__init__.py](wars/models/__init__.py)). Chuỗi mixer: `C` = ARM (attention kênh), `S` = spatial mean/max theo trục kênh (gốc; sinh ReduceMax/ReduceMean), `D` = depthwise spatial gate (eWaSR-H, không reduce theo trục kênh). `ewasr_h_p` bật `project` → 23,9M tham số so với 60,3M — dự phòng nếu Hailo-8L không chứa nổi decoder đầy đủ.
-- `init_weights` nạp `strict=False` (chỉ khóa trùng tên & shape) để khởi tạo eWaSR-H từ eWaSR chính thức.
+- Biến thể đăng ký trong `MODELS` ([wars/models/__init__.py](wars/models/__init__.py)). Chuỗi mixer: `C` = ARM (attention kênh), `S` = spatial mean/max theo trục kênh (gốc; sinh ReduceMax/ReduceMean), `D` = depthwise spatial gate (không reduce theo trục kênh). `mixer_mlp="100000"` chỉ giữ MLP ở khối 0 của feature mixer (bản Lite: `ewasr_h_lite` = eWaSR-Lite trong bài, `ewasr_lite` = eWaSR-Lite (S-mixer)); trong trọng số chính thức γ₂ của khối 1–5 ≈ 1e-40 nên kết quả trùng khít. `ewasr_h_p` bật `project` → 23,9M tham số so với 60,3M — dự phòng nếu Hailo-8L không chứa nổi decoder đầy đủ.
+- `init_weights` nạp `strict=False` (chỉ khóa trùng tên & shape) để khởi tạo biến thể từ eWaSR chính thức.
 - `resize_like`/`_pool_to` ép shape về `int` và dùng `scale_factor` nguyên / AvgPool kernel cố định để ONNX có shape tĩnh, dạng mà DFC dễ nhận. H, W đầu vào phải chia hết cho 32.
 
 **Huấn luyện:** siêu tham số gốc của WaSR/eWaSR (RMSprop lr 1e-6, decoder ×10, bias ×20, poly decay; focal loss + water-obstacle separation loss λ=0.01 trên đặc trưng layer3). Cấu hình YAML kế thừa qua `base:` ([configs/base.yaml](configs/base.yaml)). Kaggle không giữ `/kaggle/working` giữa các phiên: dùng `--time-limit-h`, Save Version, rồi Add Input output cũ để chạy tiếp từ `last.pt`.
@@ -78,7 +82,7 @@ Trọng số eWaSR chính thức (không IMU): `curl -L -o weights/ewasr_resnet1
 
 **Module không phụ thuộc torch:** `wars/constants.py`, `wars/postprocess.py`, `wars/data/usv_vn.py`, `wars/data/mods.py`, `wars/eval/` — được `pi/` và `hailo/` import (Pi và Docker DFC không chắc có torch/albumentations). Không thêm import torch vào các file này.
 
-**Mã Hailo/HailoRT** (`hailo/*.py`, `pi/run.py`) viết theo API DFC 3.x / HailoRT 4.x nhưng **chưa được chạy thật** — lần đầu dùng cần đối chiếu với phiên bản đã cài.
+**Mã Hailo/HailoRT** (`hailo/*.py`, `pi/run.py`) đã chạy thật với DFC 3.34 (venv `~/hailo-dfc/.venv`, Python 3.10) và HailoRT 4.23 trên Pi. Emulator (`hailo/infer_emulator.py`) trùng mask Pi ~99,6%. Số context/FPS nhạy với lượng tử hóa và mức tối ưu compiler (cùng HAR thì compile tất định) — so sánh mô hình phải cùng giao thức. Không chạy hai việc DFC nặng cùng lúc (OOM); dừng tiến trình bằng PID, không dùng `pkill -f`/`pgrep -f` với chuỗi có trong chính lệnh shell.
 
 ## Dữ liệu USV-VN và giao thức đánh giá
 
@@ -90,7 +94,7 @@ Trọng số eWaSR chính thức (không IMU): `curl -L -o weights/ewasr_resnet1
 
 ## Tài liệu và bài báo
 
-- [docs/design.md](docs/design.md): thiết kế eWaSR-H (công thức, lý do từng khối, *Nhật ký*). Đổi thiết kế mô hình thì cập nhật file này và thêm một dòng vào *Nhật ký*.
+- [docs/design.md](docs/design.md): thiết kế các biến thể (công thức, lý do từng khối, *Nhật ký*). Đổi thiết kế mô hình thì cập nhật file này và thêm một dòng vào *Nhật ký*.
 - [docs/paper_outline.md](docs/paper_outline.md): dàn ý bài báo (IEEE 2 cột, tiếng Anh). Chỉ đưa vào bài số liệu có `run_info.json`; không dùng số "kiểm tra sức khỏe" (E1w/E2w, val 26 ảnh).
 - `paper/` (`main.tex`, `refs.bib`): bản LaTeX của bài báo.
 
