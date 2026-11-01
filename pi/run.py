@@ -4,6 +4,8 @@
     python3 pi/run.py --hef ewasr_h_384x512.hef --split test --out results/ewasr_h_pi --hfov 70
     # Video / camera
     python3 pi/run.py --hef ewasr_h_384x512.hef --video 0 --show
+    # MODS: mask màu MODS_COLORS ở kích thước đầu vào mô hình, <out>/<seq>/<frame>.png → tools/eval_mods.py
+    python3 pi/run.py --hef e7.hef --mods ~/datasets/mods --out results/mods/e7_int8
 
 Mặc định chạy pipeline 3 luồng (đọc ảnh → suy luận Hailo → hậu xử lý CPU) để hậu xử lý khung n−1 chồng
 lên suy luận khung n; `fps_throughput` là thông lượng thật. `--sequential` chạy tuần tự như cũ (đo độ trễ
@@ -12,7 +14,7 @@ từng bước không bị tranh chấp).
 Đo thông lượng (ảnh từ thư mục): `--warmup 1 --repeat 3` (mặc định) chạy 1 lượt làm nóng rồi 3 lượt đo trên cùng
 tập ảnh; `fps_throughput` là trung vị các lượt đo, kèm min–max, nhiệt độ SoC và cờ throttle trước/sau mỗi lượt
 (`vcgencmd`) và CPU governor trong `timing.json`. `--preload` giải mã sẵn mọi ảnh vào RAM (mô phỏng luồng camera,
-loại thời gian đọc thẻ nhớ). Video/camera luôn chạy một lượt.
+loại thời gian đọc thẻ nhớ). Video/camera và `--mods` luôn chạy một lượt.
 
 Trên Pi chỉ cần: numpy, opencv-python và HailoRT Python (`sudo apt install hailo-all`).
 FPS thuần của HEF (không tính tiền/hậu xử lý): `hailortcli benchmark <file.hef>`.
@@ -31,8 +33,9 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from wars.data.mods import list_mods_frames  # noqa: E402
 from wars.data.usv_vn import list_images  # noqa: E402
-from wars.postprocess import extract_obstacles, logits_to_mask, overlay, save_mask  # noqa: E402
+from wars.postprocess import MODS_COLORS, extract_obstacles, logits_to_mask, overlay, save_mask  # noqa: E402
 
 
 class HailoSeg:
@@ -98,6 +101,9 @@ def frames(args):
                 break
             yield f"frame_{i:06d}", f
             i += 1
+    elif args.mods:
+        for seq, p in list_mods_frames(args.mods):
+            yield f"{seq}/{p.stem}", cv2.imread(str(p))
     else:
         src = list_images(args.usv_root, args.split) if args.split else sorted(Path(args.images).glob("*.jpg"))
         for p in src:
@@ -111,6 +117,7 @@ def main():
     ap.add_argument("--split")
     ap.add_argument("--images")
     ap.add_argument("--video", help="đường dẫn video hoặc chỉ số camera")
+    ap.add_argument("--mods", help="thư mục gốc MODS (sequences/<seq>/frames, imus)")
     ap.add_argument("--out")
     ap.add_argument("--hfov", type=float, help="góc nhìn ngang camera (độ) để tính hướng vật cản")
     ap.add_argument("--min-area", type=int, default=20)
@@ -121,8 +128,8 @@ def main():
     ap.add_argument("--repeat", type=int, default=3, help="số lượt đo; báo trung vị và min–max (ảnh từ thư mục)")
     ap.add_argument("--preload", action="store_true", help="giải mã sẵn mọi ảnh vào RAM trước khi đo")
     args = ap.parse_args()
-    if args.video is not None:
-        args.warmup, args.repeat, args.preload = 0, 1, False
+    if args.video is not None or args.mods:
+        args.warmup, args.repeat, args.preload = 0, 1, False  # camera / MODS (8175 khung): một lượt
     preloaded = list(frames(args)) if args.preload else None
 
     def source():
@@ -136,6 +143,10 @@ def main():
         out.mkdir(parents=True, exist_ok=True)
         log = (out / "obstacles.jsonl").open("w")
     def handle(name, img, mask, obstacles):
+        if log and args.mods:
+            # như tools/predict.py --mods: mask màu ở kích thước đầu vào mô hình, toolkit tự resize (nearest)
+            save_mask(cv2.cvtColor(MODS_COLORS[mask], cv2.COLOR_RGB2BGR), out / f"{name}.png")
+            return True
         if log:
             log.write(json.dumps({"frame": name, "obstacles": obstacles}) + "\n")
             save_mask(mask, out / "masks" / f"{name}.png")
@@ -151,8 +162,11 @@ def main():
                 return cv2.waitKey(1) != ord("q")
         return True
 
+    def out_hw(img):
+        return seg.hw if args.mods else img.shape[:2]
+
     def post(img, logits):
-        return post_process(logits, img.shape[:2], args.min_area, args.hfov)
+        return post_process(logits, out_hw(img), args.min_area, args.hfov)
 
     pool = None
     if not args.sequential:
@@ -191,7 +205,7 @@ def main():
                 t0 = time.perf_counter()  # độ trễ tính từ lúc bắt đầu suy luận, không gồm thời gian chờ hàng đợi
                 logits = seg(img)
                 t1 = time.perf_counter()
-                fut = pool.submit(post_process, logits, img.shape[:2], args.min_area, args.hfov)
+                fut = pool.submit(post_process, logits, out_hw(img), args.min_area, args.hfov)
                 q_post.put((name, img, t0, t1, fut))
             q_post.put(stop)
 
