@@ -57,7 +57,7 @@ def _components(obst, min_area):
             for i in range(1, n) if stats[i, 4] >= min_area]
 
 
-def eval_mask_coverage(mask, gt_boxes, water=None, coverage_thr=0.5, min_area=20):
+def eval_mask_coverage(mask, gt_boxes, water=None, coverage_thr=0.5, min_area=25):
     obst = mask == OBSTACLE
     hits = []
     for b in gt_boxes:
@@ -83,7 +83,7 @@ def boxes_to_mask(boxes, h, w):
     return mask
 
 
-def mask_to_boxes(mask, water=None, min_area=20):
+def mask_to_boxes(mask, water=None, min_area=25):
     obst = mask == OBSTACLE
     if water is not None:
         obst &= water

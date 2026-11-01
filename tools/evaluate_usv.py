@@ -30,7 +30,9 @@ def main():
     ap.add_argument("--water-edges", default="data/usv_vn/water_edges.json")
     ap.add_argument("--coverage-thr", type=float, default=0.5)
     ap.add_argument("--iou-thr", type=float, default=0.5)
-    ap.add_argument("--min-area", type=int, default=20)
+    # 25 px = AREA_THRESHOLD của MODS toolkit (bborja/mods_evaluation@b243918, configs/config.py: 5*5).
+    # Toolkit loại vùng dự đoán có diện tích <= 25 khi đếm FP; ở đây giữ vùng >= min_area (lệch 1 px, không đáng kể)
+    ap.add_argument("--min-area", type=int, default=25)
     ap.add_argument("--score-thr", type=float, default=0.25, help="ngưỡng điểm cho --pred-boxes")
     ap.add_argument("--size-edges", type=float, nargs="+", default=[32, 96],
                     help="ngưỡng sqrt(diện tích box) chia nhóm kích thước")
