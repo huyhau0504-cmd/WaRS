@@ -31,6 +31,7 @@ def main():
     ap.add_argument("--split")
     ap.add_argument("--images")
     ap.add_argument("--mods")
+    ap.add_argument("--mods-sequences", nargs="+", help="chỉ chạy các sequence MODS này (tên thư mục)")
     ap.add_argument("--size", type=int, nargs=2, default=[384, 512], help="H W đầu vào của mô hình")
     ap.add_argument("--batch", type=int, default=8)
     ap.add_argument("--out", required=True)
@@ -45,6 +46,8 @@ def main():
 
     if args.mods:
         items = list_mods_frames(args.mods)
+        if args.mods_sequences:
+            items = [it for it in items if it[0] in set(args.mods_sequences)]
     else:
         src = list_images(args.usv_root, args.split) if args.split else sorted(Path(args.images).glob("*.jpg"))
         items = [(None, p) for p in src]
