@@ -72,6 +72,14 @@ def find_data(input_root):
     return mastr, usv
 
 
+def find_lars(input_root):
+    """Thư mục gốc LaRS (có train/image_list.txt và train/semantic_masks) dưới input_root, hoặc None."""
+    for lst in Path(input_root).rglob("image_list.txt"):
+        if lst.parent.name == "train" and (lst.parent / "semantic_masks").is_dir():
+            return str(lst.parents[1])
+    return None
+
+
 def find_previous(input_root, name):
     """Thư mục runs/<name> có last.pt trong output của version trước (đã Add Input)."""
     return next((p.parent for p in Path(input_root).rglob(f"runs/{name}/last.pt")), None)
@@ -119,6 +127,7 @@ class Runner:
         self.commit, self.branch = git("rev-parse", "HEAD"), git("rev-parse", "--abbrev-ref", "HEAD")
         self.dirty = bool(git("status", "--porcelain", "--untracked-files=no"))
         self.mastr, self.usv = find_data(args.input_root)
+        self.lars = find_lars(args.input_root)
 
     def remaining_h(self):
         return max(0.05, self.rc.get("time_limit_h", 11) - (time.time() - self.t0) / 3600)
@@ -170,6 +179,10 @@ class Runner:
             raise FileNotFoundError(f"không tìm thấy MaSTr1325 (*m.png) dưới {self.args.input_root}")
         sets = ([f"data.{k}={v}" for k, v in self.mastr.items()] + [f"train.workers={self.workers}"]
                 + list(spec.get("set", [])))
+        if "data.dataset=lars" in sets:
+            if self.lars is None:
+                raise FileNotFoundError(f"run dùng LaRS nhưng không tìm thấy train/image_list.txt + semantic_masks dưới {self.args.input_root}")
+            sets.append(f"data.lars_root={self.lars}")
         cfg = load_config(ROOT / spec["config"], sets)
         info["merged_config"] = cfg
         n_before = len(metrics(out / "metrics.csv"))
@@ -267,7 +280,7 @@ class Runner:
                   "ok" if all(r["status"] == "done" for r in results) else "partial")
         summary = {"status": status, "commit": self.commit, "branch": self.branch, "dirty": self.dirty,
                    "elapsed_h": round((time.time() - self.t0) / 3600, 3), "finished": now(),
-                   "n_gpu": self.n_gpu, "data": {"mastr": self.mastr, "usv": self.usv},
+                   "n_gpu": self.n_gpu, "data": {"mastr": self.mastr, "usv": self.usv, "lars": self.lars},
                    "runs": [{k: r.get(k) for k in ("name", "kind", "status", "has_checkpoint", "epochs_total",
                                                    "sec_per_epoch", "best_miou", "post", "error")}
                             for r in results]}
