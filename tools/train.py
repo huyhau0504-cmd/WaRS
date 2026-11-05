@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from wars.config import load_config  # noqa: E402
-from wars.data.mastr import MaSTr1325  # noqa: E402
+from wars.data.mastr import LaRS, MaSTr1325  # noqa: E402
 from wars.data.transforms import eval_transform, train_transform  # noqa: E402
 from wars.losses import focal_loss, water_obstacle_separation_loss  # noqa: E402
 from wars.models import get_model, load_weights  # noqa: E402
@@ -90,11 +90,15 @@ def main():
     random.seed(t["seed"]); np.random.seed(t["seed"]); torch.manual_seed(t["seed"])
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     size = tuple(m["input_size"])
-    root = Path(d["mastr_root"])
-
-    train_ds = MaSTr1325(root / d["image_dir"], root / d["mask_dir"], d["train_list"],
-                         train_transform(size, d.get("vn_color_aug", False)))
-    val_ds = MaSTr1325(root / d["image_dir"], root / d["mask_dir"], d["val_list"], eval_transform(size))
+    if d.get("dataset", "mastr") == "lars":
+        # LaRS train đã chứa MaSTr1325 (gán nhãn lại); kiểm định trên LaRS val (có cảnh sông/hồ)
+        train_ds = LaRS(d["lars_root"], d.get("lars_train_split", "train"), train_transform(size, d.get("vn_color_aug", False)))
+        val_ds = LaRS(d["lars_root"], d.get("lars_val_split", "val"), eval_transform(size))
+    else:
+        root = Path(d["mastr_root"])
+        train_ds = MaSTr1325(root / d["image_dir"], root / d["mask_dir"], d["train_list"],
+                             train_transform(size, d.get("vn_color_aug", False)))
+        val_ds = MaSTr1325(root / d["image_dir"], root / d["mask_dir"], d["val_list"], eval_transform(size))
     train_dl = DataLoader(train_ds, batch_size=t["batch_size"], shuffle=True, drop_last=True,
                           num_workers=t["workers"], pin_memory=True, persistent_workers=t["workers"] > 0)
     val_dl = DataLoader(val_ds, batch_size=t["batch_size"], num_workers=t["workers"])

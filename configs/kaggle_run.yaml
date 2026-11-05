@@ -5,23 +5,16 @@
 # E1/E2 (V6, commit 35dc4f8) và E6/E7 (T08): cùng giao thức, cùng khởi tạo backbone ImageNet (D3),
 # 100 epoch theo configs/base.yaml.
 runs:
-  # S1 (Q-017): huấn luyện lặp cặp chính E1 (eWaSR) và E7 (eWaSR-Lite), seed 1 và 2 — cùng giao thức E1/E7 (seed 0)
-  - name: e1_ewasr_s1
-    kind: seg
-    config: configs/ewasr.yaml
-    set: ["model.init_weights=null", "train.seed=1"]
-  - name: e7_ewasr_h_lite_s1
+  # T09: huấn luyện trên LaRS train (2605 ảnh = 1323 ảnh MaSTr1325 gán nhãn lại + 1282 ảnh sông/hồ/biển khác),
+  # kiểm định trên LaRS val. Cần dataset Kaggle LaRS (train/ + val/: images, semantic_masks, image_list.txt).
+  - name: e7_ewasr_h_lite_lars   # eWaSR-Lite (mô hình chính)
     kind: seg
     config: configs/ewasr_h.yaml
-    set: ["model.name=ewasr_h_lite", "model.init_weights=null", "train.seed=1"]
-  - name: e1_ewasr_s2
+    set: ["model.name=ewasr_h_lite", "model.init_weights=null", "data.dataset=lars"]
+  - name: e1_ewasr_lars          # eWaSR đầy đủ, đối chứng cùng dữ liệu
     kind: seg
     config: configs/ewasr.yaml
-    set: ["model.init_weights=null", "train.seed=2"]
-  - name: e7_ewasr_h_lite_s2
-    kind: seg
-    config: configs/ewasr_h.yaml
-    set: ["model.name=ewasr_h_lite", "model.init_weights=null", "train.seed=2"]
+    set: ["model.init_weights=null", "data.dataset=lars"]
   # Smoke trước khi tốn GPU:
   # - name: smoke_ewasr_h
   #   kind: seg

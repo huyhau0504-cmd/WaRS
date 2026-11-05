@@ -13,6 +13,8 @@ data:
   train_list: configs/mastr1325/train_images.txt
   val_list: configs/mastr1325/val_images.txt
   vn_color_aug: false       # augmentation ám màu mô phỏng USV-VN
+  dataset: mastr            # mastr | lars (LaRS train đã gồm MaSTr1325; kiểm định trên LaRS val)
+  lars_root: null           # thư mục gốc LaRS (<root>/train, <root>/val); Kaggle runner tự điền
 
 train:
   epochs: 100
