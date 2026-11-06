@@ -5,7 +5,11 @@
 
 Tự chạy tiếp từ `<out>/last.pt` nếu có (Kaggle giới hạn 12 giờ/phiên). `--time-limit-h` dừng
 an toàn trước khi phiên hết giờ. Kết quả: last.pt (đầy đủ trạng thái), best.pth (chỉ trọng số,
-theo mIoU val), metrics.csv, config.yaml.
+theo mIoU val), best_val_loss.pth (theo val loss), metrics.csv, config.yaml.
+
+`train.early_stop_patience: N` dừng khi val loss không giảm sau N lần kiểm định (công thức bài eWaSR:
+tối đa 200 epoch, patience 20). Với mô hình có layer scale, metrics.csv ghi thêm mỗi epoch mean|γ₂| và
+mean sqrt(v) (trạng thái square_avg của RMSprop, để so với eps) cho từng khối feature mixer (T03).
 """
 import argparse
 import csv
@@ -48,6 +52,22 @@ def build_optimizer(model, t):
     sched = torch.optim.lr_scheduler.LambdaLR(
         opt, lambda e: (1 - e / t["epochs"]) ** t["lr_decay_pow"])
     return opt, sched
+
+
+def layer_scale_params(model):
+    """{khối: tham số γ₂} của feature mixer (decoder.metaformers.<i>.layer_scale_2)."""
+    pre, suf = "decoder.metaformers.", ".layer_scale_2"
+    return {int(n[len(pre):-len(suf)]): p for n, p in model.named_parameters()
+            if n.startswith(pre) and n.endswith(suf)}
+
+
+def layer_scale_stats(gammas, opt):
+    row = {}
+    for i, p in gammas.items():
+        row[f"g2_{i}"] = p.detach().abs().mean().item()
+        v = opt.state.get(p, {}).get("square_avg")
+        row[f"sqrtv_{i}"] = v.sqrt().mean().item() if v is not None else float("nan")
+    return row
 
 
 @torch.no_grad()
@@ -105,15 +125,19 @@ def main():
 
     model = get_model(m["name"]).to(device)
     opt, sched = build_optimizer(model, t)
+    gammas = layer_scale_params(model)
+    log_fields = LOG_FIELDS + [f"{k}_{i}" for i in sorted(gammas) for k in ("g2", "sqrtv")]
+    patience = t.get("early_stop_patience")
     scaler = torch.amp.GradScaler(enabled=t["amp"] and device.type == "cuda")
 
-    start_epoch, best = 0, -1.0
+    start_epoch, best, best_loss, bad = 0, -1.0, float("inf"), 0
     last = out / "last.pt"
     if last.exists():
         ck = torch.load(last, map_location=device, weights_only=False)
         model.load_state_dict(ck["model"]); opt.load_state_dict(ck["opt"])
         sched.load_state_dict(ck["sched"]); scaler.load_state_dict(ck["scaler"])
         start_epoch, best = ck["epoch"] + 1, ck["best"]
+        best_loss, bad = ck.get("best_val_loss", float("inf")), ck.get("bad_evals", 0)
         print(f"Tiếp tục từ epoch {start_epoch} (best mIoU {best:.4f})")
     elif m.get("init_weights"):
         skipped = load_weights(model, m["init_weights"], strict=False)
@@ -146,18 +170,32 @@ def main():
             if row["miou"] > best:
                 best = row["miou"]
                 torch.save(model.state_dict(), out / "best.pth")
+            if row["val_loss"] < best_loss:
+                best_loss, bad = row["val_loss"], 0
+                torch.save(model.state_dict(), out / "best_val_loss.pth")
+            else:
+                bad += 1
+        row.update(layer_scale_stats(gammas, opt))
         print(" ".join(f"{k}={v:.4g}" if isinstance(v, float) else f"{k}={v}" for k, v in row.items()),
               flush=True)
+        if epoch == start_epoch and device.type == "cuda":
+            print(f"GPU peak {torch.cuda.max_memory_allocated() / 2**30:.1f} GB", flush=True)
 
         new = not log_path.exists()
         with log_path.open("a", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=LOG_FIELDS, restval="")
+            w = csv.DictWriter(f, fieldnames=log_fields, restval="")
             if new:
                 w.writeheader()
             w.writerow(row)
 
         torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(),
-                    "scaler": scaler.state_dict(), "epoch": epoch, "best": best}, last)
+                    "scaler": scaler.state_dict(), "epoch": epoch, "best": best,
+                    "best_val_loss": best_loss, "bad_evals": bad}, last)
+
+        if patience and bad >= patience:
+            print(f"Dừng sớm sau epoch {epoch}: val loss không giảm sau {bad} lần kiểm định "
+                  f"(tốt nhất {best_loss:.4g}).")
+            break
 
         if args.time_limit_h and (time.time() - t0) / 3600 > args.time_limit_h:
             print(f"Hết thời gian cho phép sau epoch {epoch}; chạy lại cùng lệnh để tiếp tục.")
