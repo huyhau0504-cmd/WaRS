@@ -5,16 +5,21 @@
 # E1/E2 (V6, commit 35dc4f8) và E6/E7 (T08): cùng giao thức, cùng khởi tạo backbone ImageNet (D3),
 # 100 epoch theo configs/base.yaml.
 runs:
-  # T09: huấn luyện trên LaRS train (2605 ảnh = 1323 ảnh MaSTr1325 gán nhãn lại + 1282 ảnh sông/hồ/biển khác),
-  # kiểm định trên LaRS val. Cần dataset Kaggle LaRS (train/ + val/: images, semantic_masks, image_list.txt).
-  - name: e7_ewasr_h_lite_lars   # eWaSR-Lite (mô hình chính)
-    kind: seg
-    config: configs/ewasr_h.yaml
-    set: ["model.name=ewasr_h_lite", "model.init_weights=null", "data.dataset=lars"]
-  - name: e1_ewasr_lars          # eWaSR đầy đủ, đối chứng cùng dữ liệu
+  # T03 (Q-020): công thức bài eWaSR — fp32 (không AMP), batch 16, tối đa 200 epoch, early stopping
+  # patience 20 theo val loss. metrics.csv ghi mean|γ₂| và sqrt(v) của RMSprop mỗi epoch cho khối 0–5.
+  # Câu hỏi: công thức này có làm MLP mixer 1–5 chết hết như trọng số công bố không (E1), và E7 có
+  # thu hẹp khoảng cách F1 vùng nguy hiểm không (E7).
+  - name: e1_ewasr_paper
     kind: seg
     config: configs/ewasr.yaml
-    set: ["model.init_weights=null", "data.dataset=lars"]
+    set: ["model.init_weights=null", "train.amp=false", "train.batch_size=16", "train.epochs=200",
+          "train.early_stop_patience=20"]
+  - name: e7_ewasr_h_lite_paper
+    kind: seg
+    config: configs/ewasr_h.yaml
+    set: ["model.name=ewasr_h_lite", "model.init_weights=null", "train.amp=false", "train.batch_size=16",
+          "train.epochs=200", "train.early_stop_patience=20"]
+  # T09 (xong, Kaggle V9, commit 9a0bd11): e7_ewasr_h_lite_lars, e1_ewasr_lars — data.dataset=lars
   # Smoke trước khi tốn GPU:
   # - name: smoke_ewasr_h
   #   kind: seg

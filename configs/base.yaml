@@ -26,5 +26,6 @@ train:
   lr_decay_pow: 0.9
   separation_loss_lambda: 0.01
   amp: true
+  early_stop_patience: null  # dừng khi val loss không giảm sau N lần kiểm định (bài eWaSR: 20, tối đa 200 epoch)
   val_every: 1
   seed: 0
