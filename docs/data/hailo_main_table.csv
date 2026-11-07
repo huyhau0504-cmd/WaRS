@@ -4,3 +4,5 @@ e1_ewasr,on,hailo/build/e1_ewasr_o0max.hef,511e173e63b62f61c9b7932e04608eb8,7,18
 e2_ewasr_h,off,hailo/build/e2_ewasr_h_c64noeqmax.hef,c057705fdcdab88763491259e441eb48,8,16.03,60.0,15.29,15.24,15.31,15.42,
 e6_ewasr_lite,off,hailo/build/e6_ewasr_lite_c64noeqmax.hef,f8f2a3d6dca04f16c52565c8db022d28,4,26.01,36.6,24.02,23.95,24.12,24.73,
 e7_ewasr_h_lite,off,hailo/build/e7_ewasr_h_lite_c64noeqmax.hef,4c9b7f2b6157b355b0bd07c23685bf53,4,29.74,31.0,27.32,27.15,27.54,28.09,eWaSR-Lite (main model)
+ewasr_official,off,hailo/build/ewasr_official_c64noeqmax.hef,d835f9ca4227944637edea404e7ac997,5,28.67,34.2,25.7,,,,published weights (MLPs 1-5 zero); e2e on USV-VN frames
+ewasr_lite_official,off,hailo/build/ewasr_lite_official_c64noeqmax.hef,c0f4421f0252a8bf445c10ee5ba8dcc2,5,24.95,38.9,22.8,,,,published weights in reduced S network

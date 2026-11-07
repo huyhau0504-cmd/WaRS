@@ -1,0 +1,8 @@
+hef,frames,input,e2e_fps_median,e2e_fps_min,e2e_fps_max,cpu_governor
+e1_ewasr_c64noeqmax,303,MODS 1278x958 (1/27 left frames),14.62,14.61,14.64,ondemand
+e1_ewasr_o0max,303,MODS 1278x958 (1/27 left frames),15.79,15.72,15.85,ondemand
+e2_ewasr_h_c64noeqmax,303,MODS 1278x958 (1/27 left frames),13.84,13.79,13.84,ondemand
+e6_ewasr_lite_c64noeqmax,303,MODS 1278x958 (1/27 left frames),20.75,20.66,20.77,ondemand
+e7_ewasr_h_lite_c64noeqmax,303,MODS 1278x958 (1/27 left frames),22.65,22.59,22.71,ondemand
+ewasr_lite_official_c64noeqmax,303,MODS 1278x958 (1/27 left frames),19.57,19.56,19.70,ondemand
+ewasr_official_c64noeqmax,303,MODS 1278x958 (1/27 left frames),21.81,21.72,21.83,ondemand
