@@ -112,7 +112,7 @@ def main():
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, bbox_inches="tight", pad_inches=0.01)
-    fig.savefig(out.with_suffix(".png"), dpi=220, bbox_inches="tight", pad_inches=0.01)
+    fig.savefig(out.with_suffix(".png"), dpi=400, bbox_inches="tight", pad_inches=0.01)
     print(f"→ {out}, {out.with_suffix('.png')}")
 
 

@@ -47,7 +47,7 @@ def overlay(img, cls, alpha=0.45):
 
 def label(img, text):
     out = img.copy()
-    h = 20
+    h = 28
     cv2.rectangle(out, (0, 0), (out.shape[1], h + 6), (0, 0, 0), -1)
     cv2.putText(out, text, (6, h), cv2.FONT_HERSHEY_SIMPLEX, h / 30, (255, 255, 255), max(1, h // 15), cv2.LINE_AA)
     return out
@@ -75,7 +75,7 @@ def main():
     ap.add_argument("--lars-frame", default="orca_usv_inland_N03_3_00777")
     ap.add_argument("--lars-a", default="e7_ewasr_h_lite_fp32")
     ap.add_argument("--lars-b", default="e7_ewasr_h_lite_lars_fp32")
-    ap.add_argument("--width", type=int, default=480, help="chiều rộng mỗi ô (px)")
+    ap.add_argument("--width", type=int, default=700, help="chiều rộng mỗi ô (px)")
     ap.add_argument("--list-mods", type=int)
     ap.add_argument("--out", default=str(ROOT / "paper/figs/qual.png"))
     args = ap.parse_args()
