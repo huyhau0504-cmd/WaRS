@@ -1,0 +1,15 @@
+hef,model,equalization,calib_seed,contexts,hw_fps,hw_latency_ms,note
+e1_ewasr_c64noeqmax,e1_ewasr,off,0,8,17.5,56.1,from hailo_main_table.csv
+e1_ewasr_c64noeqs1max,e1_ewasr,off,1,7,17.54,52.7,hailortcli benchmark -t 10 (08/11/2026)
+e1_ewasr_c64noeqs2max,e1_ewasr,off,2,7,17.54,53.9,hailortcli benchmark -t 10 (08/11/2026)
+e1_ewasr_o0max,e1_ewasr,on,0,7,18.76,50.9,from hailo_main_table.csv
+e1_ewasr_c64eqs1max,e1_ewasr,on,1,7,18.84,50.9,hailortcli benchmark -t 10 (08/11/2026)
+e1_ewasr_c64eqs2max,e1_ewasr,on,2,7,18.84,51.0,hailortcli benchmark -t 10 (08/11/2026)
+e7_ewasr_h_lite_c64noeqmax,e7_ewasr_h_lite,off,0,4,29.74,31.0,from hailo_main_table.csv
+e7_ewasr_h_lite_c64noeqs1max,e7_ewasr_h_lite,off,1,4,29.80,30.7,hailortcli benchmark -t 10 (08/11/2026)
+e7_ewasr_h_lite_c64noeqs2max,e7_ewasr_h_lite,off,2,4,29.81,31.4,hailortcli benchmark -t 10 (08/11/2026)
+ewasr_official_c64noeqmax,ewasr_official,off,0,5,28.67,34.2,published weights
+ewasr_official_c64noeqs1max,ewasr_official,off,1,5,28.67,34.2,published weights; hailortcli benchmark -t 15 (08/11/2026)
+ewasr_official_c64noeqs2max,ewasr_official,off,2,4,23.19,39.3,published weights; hailortcli benchmark -t 15 (08/11/2026)
+e7_ewasr_h_lite_lars_c64noeqmax,e7_ewasr_h_lite (LaRS),off,0,4,29.14,31.8,trained on LaRS; e2e MODS 22.34 FPS
+e1_ewasr_lars_c64noeqmax,e1_ewasr (LaRS),off,0,8,14.70,66.8,trained on LaRS; e2e MODS 12.78 FPS

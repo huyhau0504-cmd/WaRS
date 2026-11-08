@@ -106,13 +106,20 @@ def parse(path):
 
 
 def number_things(blocks):
-    """Số bảng/hình/phương trình theo thứ tự định nghĩa; trích dẫn theo thứ tự xuất hiện."""
+    """Số bảng/hình theo lần nhắc đầu tiên, phương trình theo vị trí; trích dẫn theo thứ tự xuất hiện."""
     nums = {"tab": {}, "fig": {}, "eq": {}}
     cites = {}
+
+    def reg(kind, name):
+        nums[kind].setdefault(name, len(nums[kind]) + 1)
+
+    # bảng và hình: theo lần nhắc đến đầu tiên (hoặc vị trí đặt, nếu đặt trước khi nhắc); phương trình: theo vị trí
     for b in blocks:
-        if b[0] in ("table", "fig", "eq"):
-            kind = {"table": "tab", "fig": "fig", "eq": "eq"}[b[0]]
-            nums[kind][b[1]] = len(nums[kind]) + 1
+        if b[0] in ("p", "li"):
+            for kind, name in re.findall(r"@(tab|fig):([\w-]+)", b[1]):
+                reg(kind, name)
+        elif b[0] in ("table", "fig", "eq"):
+            reg({"table": "tab", "fig": "fig", "eq": "eq"}[b[0]], b[1])
     texts = []
     for b in blocks:
         if b[0] in ("p", "li"):
