@@ -17,7 +17,7 @@ File này để ai mở repo (Hậu trên Windows, hoặc Claude) nắm đủ b�
 
 | File | Vai trò |
 |---|---|
-| `paper/eej/WaRS_EEJ_manuscript.docx` | **Bản nộp. Sau lần dựng cuối có kết quả T03, đây là BẢN GỐC** — sửa trực tiếp trong Word (MathType, comment của thầy). |
+| `paper/eej/WaRS_EEJ_manuscript.docx` | **BẢN GỐC từ 10/11/2026** (đã dựng lần cuối với kết quả T03) — sửa trực tiếp trong Word (MathType, comment của thầy). |
 | `paper/eej/manuscript.md` | Nguồn đã dùng để dựng file Word (`tools/build_eej_docx.py`). **Không dựng lại file Word từ đây sau mốc trên** — sẽ xóa mọi chỉnh sửa trong Word. |
 | `paper/figs/*.png, *.pdf` | Hình (≥300 PPI). Sinh lại bằng `tools/make_arch_figure.py`, `tools/make_qual_figure.py`, `tools/make_plots.py`. |
 | `paper/main.tex`, `paper/refs.bib` | Bản LaTeX kiểu IEEE (bản nháp cũ, không nộp). `paper/archive/`: bản có USV-VN/YOLO. |
@@ -43,8 +43,8 @@ File này để ai mở repo (Hậu trên Windows, hoặc Claude) nắm đủ b�
 - [ ] Kiểm tra **số trang** (ước tính ~20; nếu vượt thì rút Related Work/Discussion).
 - [ ] Thầy rà câu "chưa có nghiên cứu về độ nhạy với bộ calib cho phân đoạn mặt nước" (mục 2-2).
 - [ ] Bổ sung số trang cho 2 tài liệu: MaSTr1325 (IROS 2019), MODS (IEEE T-ITS 2022).
-- [ ] Điền link code: **https://github.com/huyhau0504-cmd/ewasr-lite** (repo công khai, đã có Release v1.0 kèm trọng số).
-- [ ] Kết quả MODS của T03 (đang chấm 10/11) → câu `[TBD: MODS danger-zone F1 …]` trong mục "Training recipe"; số context của E1 công thức gốc (đang compile).
+- [x] Link code đã có trong bài: https://github.com/huyhau0504-cmd/ewasr-lite (Release v1.0 kèm trọng số).
+- [x] T03 (công thức gốc eWaSR) đã điền: MLP không chết (γ₂ 1,1–1,7×10⁻²), MODS F1 91,9 / 91,9, vùng nguy hiểm 83,6 (E1) / 82,5 (E7) — không thu hẹp khoảng cách. Còn: số context của E1 công thức gốc (compile chạy trên Linux; có số thì thêm 1 câu vào mục 5-5).
 - [ ] Khai báo việc dùng công cụ AI nếu quy định của EEJ yêu cầu.
 
 ## 5. Số liệu chính (để đối chiếu khi sửa câu chữ)
