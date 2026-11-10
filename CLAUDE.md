@@ -94,6 +94,9 @@ Trọng số eWaSR chính thức (không IMU): `curl -L -o weights/ewasr_resnet1
 
 ## Tài liệu và bài báo
 
+**Bài báo đang viết (EEJ, file Word): đọc [paper/CONTEXT.md](paper/CONTEXT.md) trước** — phạm vi đã chốt, file nào là bản gốc (sau khi có kết quả T03, `paper/eej/WaRS_EEJ_manuscript.docx` là bản gốc, không dựng lại từ `manuscript.md`), yêu cầu định dạng của tạp chí, số liệu chính và việc còn lại.
+
+
 - [docs/design.md](docs/design.md): thiết kế các biến thể (công thức, lý do từng khối, *Nhật ký*). Đổi thiết kế mô hình thì cập nhật file này và thêm một dòng vào *Nhật ký*.
 - [docs/paper_outline.md](docs/paper_outline.md): dàn ý bài báo (IEEE 2 cột, tiếng Anh). Chỉ đưa vào bài số liệu có `run_info.json`; không dùng số "kiểm tra sức khỏe" (E1w/E2w, val 26 ảnh).
 - `paper/` (`main.tex`, `refs.bib`): bản LaTeX của bài báo.

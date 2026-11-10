@@ -135,8 +135,11 @@ def plot_gamma():
     fig, ax = plt.subplots(figsize=(6.2, 2.6))
     style(ax)
     series = [("Published weights", "chinh_thuc", AQUA, "-", "P"), ("E1, run 0", "E1_s0", BLUE, "-", "o"),
-              ("E1, run 1", "E1_s1", BLUE, "--", "s"), ("E1, run 2", "E1_s2", BLUE, ":", "^")]
+              ("E1, run 1", "E1_s1", BLUE, "--", "s"), ("E1, run 2", "E1_s2", BLUE, ":", "^"),
+              ("E1, original recipe", "E1_paper", INK, "-.", "D")]
     for label, col_key, col, ls, mk in series:
+        if col_key not in rows[0]:
+            continue
         ax.plot(blocks, [float(r[col_key]) for r in rows], color=col, ls=ls, lw=1.4, marker=mk, ms=5,
                 markerfacecolor=col, markeredgecolor="white", markeredgewidth=0.6, label=label, zorder=3)
     ax.set_yscale("log")
