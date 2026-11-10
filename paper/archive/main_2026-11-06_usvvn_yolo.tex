@@ -1,0 +1,335 @@
+% WaRS paper draft — IEEE conference format (IEEEtran). Compile: pdflatex main && bibtex main && pdflatex main ×2
+% Outline and evidence status: ../docs/paper_outline.md. Model design notes: ../docs/design.md.
+% RULE: every number in this paper must trace to a run with run_info.json (commit, config, GPU).
+%       Placeholders are marked \tbd{...} and print in red. Do not submit while any \tbd remains.
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{url}
+\newcommand{\tbd}[1]{\textcolor{red}{[#1]}}
+\newcommand{\figplaceholder}[2]{\fbox{\parbox[c][#2][c]{0.95\linewidth}{\centering\small\textcolor{red}{#1}}}}
+
+\begin{document}
+
+% Title options: docs/paper_outline.md §0. Name eWaSR-Lite (Q-010, 21/10); main model = D-lite E7, code ewasr_h_lite (Q-011, 22/10).
+% S-lite E6 (code ewasr_lite) = "eWaSR-Lite (S-mixer)". "eWaSR-H" is no longer used.
+% Speed numbers marked "opt0/64" are provisional (PTQ opt level 0, 64 calibration images); replace with calib-1024 + compiler max.
+\title{eWaSR-Lite: Real-Time Maritime Obstacle Segmentation for Low-Cost USVs on Raspberry Pi~5 and Hailo-8L}
+
+\author{\IEEEauthorblockN{\tbd{Author 1}}
+\IEEEauthorblockA{\tbd{Affiliation}\\
+\tbd{email}}
+\and
+\IEEEauthorblockN{\tbd{Advisor}}
+\IEEEauthorblockA{\tbd{Affiliation}\\
+\tbd{email}}}
+
+\maketitle
+
+\begin{abstract}
+Low-cost unmanned surface vehicles (USVs) operating on rivers must perceive obstacles they have to avoid, such as buoys and boats, in real time on inexpensive hardware, including obstacle types never seen during training. Segmentation-based methods such as WaSR and eWaSR meet the second requirement by labelling every pixel as water, sky or obstacle, but they have not been evaluated on low-cost dataflow accelerators. We deploy eWaSR on the Hailo-8L accelerator (13~TOPS) of a Raspberry~Pi~5 and find that its speed is limited not by unsupported operators but by the number of compiler contexts, which is driven by the channel MLPs of the feature mixer. In the published eWaSR weights the layer scale has silenced five of these six MLPs, yet they stay active when the network is trained from ImageNet. Removing them structurally cuts the parameters by 61\%, halves the number of contexts (8 to 4) and raises the accelerator throughput by 49--86\%, depending on the token mixer, without loss of accuracy. Combined with a depthwise spatial gate that replaces the channel-wise mean/max attention, the resulting eWaSR-Lite is at least 59\% faster on the accelerator and 53\% faster end-to-end than the fastest eWaSR build we obtained (29.7 vs 18.8~FPS; 27.3 vs 17.8~FPS, \tbd{x.x}~W), with higher and more stable INT8 agreement (MODS F1 \tbd{xx.x}\% versus \tbd{xx.x}\%). We analyse INT8 post-training quantization and quantization-aware fine-tuning by obstacle size and find that \tbd{finding}. Finally, we introduce USV-VN, 751 frames from an urban river in Vietnam showing a small buoy-like floating object (a yellow plastic can of the kind used as an improvised marker buoy) recorded from a camera just above the waterline, with a temporal split and an evaluation protocol that needs only bounding boxes and a water-edge line, and compare eWaSR-Lite with YOLOv8n on the same accelerator: \tbd{finding}. Code and evaluation tools are released at \tbd{URL}.
+\end{abstract}
+
+\begin{IEEEkeywords}
+unmanned surface vehicle, obstacle detection, semantic segmentation, edge AI, INT8 quantization, Hailo-8L
+\end{IEEEkeywords}
+
+%==============================================================================
+\section{Introduction}
+%==============================================================================
+Unmanned surface vehicles (USVs) are increasingly used for water-quality monitoring, surveys and waste collection on rivers and lakes. To navigate autonomously, a USV must detect the obstacles it has to avoid, from boats to small buoys, while running on hardware that fits the cost and power budget of a small vessel. This paper addresses the perception part of obstacle avoidance: the output is a list of obstacles on the water surface with their bearings, to be consumed by a separate planner.
+
+Two families of camera-based methods are common. Object detectors such as YOLO~\cite{redmon2016yolo,jocher2023yolov8} are fast and widely supported by edge toolchains, but they only report the classes they were trained on. Maritime obstacle segmentation networks such as WaSR~\cite{bovcon2022wasr} and its embedded successor eWaSR~\cite{tersek2023ewasr} instead label every pixel as \emph{water}, \emph{sky} or \emph{obstacle}, so anything that is neither water nor sky is reported, including object types absent from the training set. Trained on MaSTr1325~\cite{bovcon2019mastr} and evaluated on MODS~\cite{bovcon2022mods}, eWaSR runs on an OAK-D device and is reported to be about ten times faster than WaSR on a desktop GPU~\cite{tersek2023ewasr}.
+
+Three questions remain open for low-cost USVs. First, eWaSR was designed for the Myriad~X VPU; it has not been evaluated on dataflow accelerators such as the Hailo-8L, which is now available as an add-on for the Raspberry~Pi~5 and imposes its own constraints on operators, static shapes and on-chip memory. Second, deployment on such accelerators requires INT8 quantization, and its effect on \emph{small} obstacles, the ones that matter most for safety, has not been analysed. Third, public maritime benchmarks are recorded mostly at sea from a relatively high camera; urban rivers with turbid, colour-cast water, bank reflections and a camera mounted just above the waterline, where a small buoy occupies only a thin band above the horizon, are not covered.
+
+This paper makes the following contributions:
+\begin{itemize}
+\item \textbf{eWaSR-Lite}, a variant of eWaSR for the Hailo-8L. We show that the feature-mixer MLPs, not unsupported operators, set the number of compiler contexts, and remove the five MLPs that the published eWaSR weights already silence. In a controlled $2\times2$ study (spatial mixer S or depthwise gate D, full or reduced MLPs, one quantization protocol), removing them cuts the parameters by 61\%, the contexts from 8 to 4 and raises the accelerator throughput by 49--86\% without loss of accuracy; once the MLPs are gone, the choice of mixer changes the throughput by only 14\%. eWaSR-Lite (D mixer, reduced MLPs) is at least 59\% faster on the accelerator and 53\% faster end-to-end than the fastest eWaSR build (29.7 vs 18.8~FPS; 27.3 vs 17.8~FPS), and +70\% / +68\% under the same protocol (Sec.~\ref{sec:method}).
+\item A \textbf{systematic INT8 analysis} on the Hailo Dataflow Compiler: post-training quantization versus quantization-aware fine-tuning, calibration-set size and source, and mixed 16-bit precision, reported per obstacle size (Sec.~\ref{sec:quant}).
+\item A \textbf{segmentation-versus-detection comparison} of eWaSR-Lite and YOLOv8n on the same accelerator and under the same coverage-based protocol (Sec.~\ref{sec:yolo}).
+\item \textbf{USV-VN}, an urban-river test set of a small buoy-like floating object with a leakage-free temporal split, and an open-source pipeline from training to on-device inference (Sec.~\ref{sec:data}).
+\end{itemize}
+\tbd{One sentence with the headline result once Tables~\ref{tab:fp32}--\ref{tab:yolo} are filled.}
+
+%==============================================================================
+\section{Related Work}
+%==============================================================================
+\textbf{Maritime obstacle segmentation.} WaSR~\cite{bovcon2022wasr} builds on a DeepLab-style ResNet-101 encoder~\cite{chen2018deeplab,he2016resnet} and a decoder that fuses encoder features with attention refinement modules; it is trained with a focal loss~\cite{lin2017focal} and a water-obstacle separation loss that pulls water features together and pushes obstacle features away from them. eWaSR~\cite{tersek2023ewasr} replaces the encoder with ResNet-18 and the decoder with a TopFormer-style~\cite{zhang2022topformer} design in which MetaFormer blocks~\cite{yu2022metaformer} operate on a small pyramid of pooled tokens and semantic injection modules re-inject global context into each scale. MaSTr1325~\cite{bovcon2019mastr} is the standard training set; MODS~\cite{bovcon2022mods} provides an obstacle- and water-edge-based evaluation protocol with a danger zone; LaRS~\cite{zust2023lars} extends evaluation to more diverse scenes including rivers.
+
+\textbf{Efficient segmentation.} Real-time segmentation networks reduce cost by splitting spatial detail and context into separate paths~\cite{yu2018bisenet} or by computing global context on a coarse token grid~\cite{zhang2022topformer}. Most are designed for mobile GPUs or CPUs; we target a fixed-function INT8 dataflow accelerator, where operator support and on-chip memory matter more than FLOPs.
+
+\textbf{Quantization for edge accelerators.} Integer-only inference~\cite{jacob2018quantization} and the practical post-training and quantization-aware recipes summarised in~\cite{krishnamoorthi2018quantizing,nagel2021white} underlie vendor toolchains such as the Hailo Dataflow Compiler~\cite{hailo_dfc}. Prior maritime work reports quantized results on the OAK-D~\cite{tersek2023ewasr} but, to our knowledge, does not break the accuracy loss down by obstacle size. \tbd{verify this claim against recent literature before submission}
+
+\textbf{Detection for USVs.} One-stage detectors~\cite{redmon2016yolo,jocher2023yolov8} are a common choice for vision on small vessels because of their speed and tooling. Their closed label set is the main limitation for obstacle avoidance, which motivates comparing them with segmentation under one protocol.
+
+%==============================================================================
+\section{Method}
+\label{sec:method}
+%==============================================================================
+\subsection{Constraints of the Hailo-8L}
+The Hailo-8L executes a compiled, statically shaped dataflow graph in INT8 (optionally INT16 for selected layers). Layers that the compiler cannot map are either rejected at parse time or must run on the host, which splits the network and adds PCIe transfers. When the weights do not fit in on-chip memory, the network is partitioned into several \emph{contexts} that are swapped at run time, which reduces throughput. With the Hailo Dataflow Compiler (DFC) 3.34, the original eWaSR, including the channel-wise \texttt{ReduceMean}/\texttt{ReduceMax} of its spatial attention, parses and runs entirely on the accelerator. Its speed is limited by the number of contexts instead (Table~\ref{tab:hw}), and that number depends on how many of the feature-mixer MLPs are active (Sec.~\ref{sec:lite}).
+
+\subsection{From eWaSR to eWaSR-Lite}
+\label{sec:lite}
+Fig.~\ref{fig:arch} shows the architecture. We keep the ResNet-18 encoder of eWaSR without the IMU input, the pyramid pooling of four encoder stages (strides 4--32) to a $\lceil H/64\rceil\times\lceil W/64\rceil$ token grid ($6\times8$ for a $384\times512$ input, 960 channels), the feature mixer of six MetaFormer blocks on these tokens, the long-skip enricher of two MetaFormer blocks on the stride-8 features, and the four semantic injection modules. Each MetaFormer block computes
+\begin{align}
+x &\leftarrow x + \gamma_1 \odot \mathrm{Mixer}(\mathrm{BN}(x)),\\
+x &\leftarrow x + \gamma_2 \odot \mathrm{MLP}(\mathrm{BN}(x)),
+\end{align}
+with batch normalization (foldable into convolutions) instead of layer normalization and learnable per-channel layer scales $\gamma_1,\gamma_2$ initialised to $10^{-5}$. eWaSR uses two kinds of token mixer, both of the form $y = A(x)\odot x$. The channel mixer (C) is an attention refinement module~\cite{yu2018bisenet}, $A_C(x)=\sigma(\mathrm{BN}(W\,\mathrm{GAP}(x)))\in\mathbb{R}^{C\times1\times1}$. The spatial mixer (S) computes
+\begin{equation}
+A_S(x)=\sigma\!\left(k_{3\times3} * \left[\operatorname{mean}_c x;\ \operatorname{max}_c x\right]\right)\in\mathbb{R}^{1\times H\times W}.
+\end{equation}
+eWaSR uses the mixer sequence CCCCSS and an SS enricher.
+
+\textbf{Silenced MLPs.} Each feature-mixer MLP maps 960 to 3840 channels and back (7.4\,M parameters), so the six MLPs hold 44.3\,M of the 60.3\,M parameters of eWaSR. In the published eWaSR weights~\cite{tersek2023ewasr}, the mean $|\gamma_2|$ of blocks 1--5 is about $3.6\times10^{-40}$, a denormal value; only the MLP of block~0 contributes to the output (Table~\ref{tab:gamma}). The DFC detects these zero branches and removes them, so the published weights compile to fewer contexts than the same graph trained by us. When eWaSR is trained from an ImageNet-initialised encoder with the recipe of Sec.~\ref{sec:training}, the same layer scales remain between $3\times10^{-3}$ and $1.2\times10^{-2}$ in four of the five blocks, all MLPs stay in the compiled graph, and the network needs 8 contexts instead of 4 (Table~\ref{tab:c1}).
+
+\textbf{Reduced MLPs.} We remove the MLP branch, together with its normalization and layer scale, from feature-mixer blocks 1--5 and keep it in block~0 and in the enricher. This removes 36.9\,M parameters and 1.77 GMAC (Table~\ref{tab:arch}). Loaded with the published eWaSR weights, the reduced network produces logits identical to eWaSR (maximum absolute difference 0), so the change only makes explicit what training had already converged to. Training from ImageNet then yields the same compact graph that the compiler obtains from the published weights.
+
+\textbf{Depthwise spatial gate (D).} The spatial mixer reduces along the channel axis. We replace it with a gate that uses only convolution, batch normalization and sigmoid:
+\begin{equation}
+A_D(x)=\sigma\!\left(\textstyle\sum_{c} w_c\,\mathrm{BN}(k_c * x_c) + b\right)\in\mathbb{R}^{1\times H\times W},
+\end{equation}
+where $k_c$ is a per-channel $3\times3$ depthwise kernel and $w_c$ the weights of a $1\times1$ convolution to a single channel. D keeps the role of S, a single spatial gate broadcast over all channels, but replaces the fixed mean/max pooling over channels with a learned linear combination. It includes the mean branch of S as a special case ($w_c=1/C$, identity $k_c$). The max branch has no linear equivalent. The mixer sequence becomes CCCCDD with a DD enricher.
+
+\textbf{eWaSR-Lite} combines both changes (CCCCDD mixer with an MLP only in block~0, DD enricher; 23.38\,M parameters, 10.23 GMAC). We report the four combinations as eWaSR, eWaSR (D-mixer), eWaSR-Lite (S-mixer) and eWaSR-Lite. Removing the MLPs is the first-order effect and is consistently large; the choice between S and D is a second-order effect whose sign depends on the weights and the compiler settings (Sec.~\ref{sec:hw}).
+
+\textbf{Static, accelerator-friendly resampling.} All internal resampling uses integer scale factors (nearest or bilinear \texttt{Resize} with constant scales) and pooling uses fixed-kernel \texttt{AveragePool} instead of adaptive pooling, so the exported ONNX graph has static shapes. Input height and width must be multiples of 32.
+
+\textbf{Upsampling and normalization off the critical path.} The network outputs three-class logits at $H/4\times W/4$; bilinear upsampling to image resolution and the arg-max are done on the host (upsampling logits before the arg-max gives smoother boundaries than upsampling the mask). ImageNet normalization is folded into the accelerator model script, so the host sends raw RGB \texttt{uint8} frames, which removes a float conversion on the CPU and quarters the input transfer size.
+% eWaSR-H-P (half-channel projection, 23.9 M, D mixers) is not in the paper until it is measured with trained weights (T08 item 5).
+
+\begin{figure}[t]
+\centering
+\figplaceholder{Fig.~1: eWaSR-Lite architecture. ResNet-18 → pyramid pooling (6$\times$8 tokens) → feature mixer CCCCDD, MLP only in block 0 → SIM$\times$4 (+ DD enricher on stride-8 features) → head at H/4. Highlight removed MLPs, S$\to$D, fixed-factor resampling, upsampling on host. Source: docs/design.md.}{4.2cm}
+\caption{eWaSR-Lite. Blocks changed with respect to eWaSR are highlighted. \tbd{draw}}
+\label{fig:arch}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{Feature-mixer layer scale of the MLP branch, mean $|\gamma_2|$ over channels, per block. Published: eWaSR weights of~\cite{tersek2023ewasr}; E1: eWaSR trained from ImageNet with our recipe.}
+\label{tab:gamma}
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{lcccccc}
+\toprule
+Block & 0 & 1 & 2 & 3 & 4 & 5 \\
+\midrule
+Published & 1.6e-2 & 3.6e-40 & 3.5e-40 & 3.6e-40 & 3.7e-40 & 3.7e-40 \\
+E1        & 1.3e-2 & 8.0e-3 & 5.8e-3 & 2.0e-9 & 3.2e-3 & 1.2e-2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+% Source: docs/data/layer_scale.csv (tools/layer_scale_table.py, mean |γ| over channels).
+
+\begin{table}[t]
+\centering
+\caption{Architecture statistics at $384\times512$ input (measured on our implementation). GMAC: multiply-accumulates; Reduce: channel-wise \texttt{ReduceMax}/\texttt{ReduceMean} nodes in the exported ONNX graph.}
+\label{tab:arch}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lcccc}
+\toprule
+Model & Mixer / enricher & Params & GMAC & Reduce \\
+\midrule
+eWaSR                    & CCCCSS / SS & 60.25\,M & 11.99 & 4 / 4 \\
+eWaSR-C                  & CCCCCC / CC & 62.14\,M & 11.99 & 0 / 0 \\
+eWaSR (D-mixer)          & CCCCDD / DD & 60.28\,M & 11.99 & 0 / 0 \\
+eWaSR-Lite (S-mixer)     & CCCCSS / SS & 23.35\,M & 10.22 & 4 / 4 \\
+\textbf{eWaSR-Lite}      & CCCCDD / DD & 23.38\,M & 10.23 & 0 / 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+% Source: docs/design.md §6 (08/10/2026); lite rows computed 21/10/2026 with conv/linear MAC hooks (same method reproduces 11.99 for eWaSR).
+
+\subsection{Training}
+\label{sec:training}
+We follow the eWaSR recipe~\cite{tersek2023ewasr,bovcon2022wasr}. The loss is $\mathcal{L}=\mathcal{L}_{\mathrm{focal}}+\lambda\mathcal{L}_{\mathrm{sep}}$ with $\lambda=0.01$. The focal loss~\cite{lin2017focal} with $\gamma=2$ is computed after bilinear upsampling of the logits to label resolution; pixels labelled \emph{unknown} in MaSTr1325, and border pixels introduced by geometric augmentation, have an all-zero one-hot target and do not contribute. The separation loss is applied to the stride-16 (layer3) encoder features $f$:
+\begin{equation}
+\mathcal{L}_{\mathrm{sep}}=\operatorname{mean}_c\frac{N_o\,\sigma^2_{w,c}}{\sum_{i\in O}(f_{i,c}-\mu_{w,c})^2+\varepsilon},
+\end{equation}
+where $\mu_w,\sigma^2_w$ are the mean and variance of water features in the batch, $O$ the set of obstacle pixels, $N_o=|O|$ and $\varepsilon=0.01$. We use RMSprop (momentum 0.9, $\alpha=0.9$, weight decay $10^{-6}$) with learning rates of $10^{-6}$ for the encoder, $10^{-5}$ for decoder weights and $2\times10^{-5}$ for decoder biases, and a polynomial decay with power 0.9 applied per epoch. \tbd{Batch size, number of epochs, early stopping and augmentation strength: final values after T03 (code default: batch 4, 100 epochs; paper~\cite{tersek2023ewasr}: batch 16, up to 200 epochs, patience 20; Gaussian-noise strength must match the original albumentations default).} All variants in Table~\ref{tab:fp32} start from an ImageNet-pretrained ResNet-18~\cite{he2016resnet} and use the same recipe; we report the weights of the last epoch.
+
+\subsection{On-device pipeline}
+On the Raspberry~Pi~5, each frame is resized to the network input, inferred on the Hailo-8L through HailoRT, upsampled on the CPU, and post-processed. The largest water region that touches the bottom of the image defines the raw water edge (the topmost water pixel in each column). With a camera just above the waterline, an obstacle in front of the bank is connected to the bank in the image and the raw edge dips below it. We therefore smooth the edge profile with a one-dimensional morphological opening whose width is 20\% of the image width, which fills dips narrower than that and yields the shoreline. Obstacle pixels strictly below the shoreline form connected components; components of at least 20 pixels are reported, which discards the far shore and static structures. Each component is converted to a bounding box, and its bearing is approximated linearly as $(x_b/W-0.5)\cdot\mathrm{HFOV}$ from the horizontal position $x_b$ of its lowest point. The output is a list of obstacles with bearings. Frame reading, inference and post-processing run concurrently: a reader thread and an inference thread feed a pool of two post-processing processes, because the HailoRT Python binding holds the interpreter lock. \tbd{choose the 20\% width and 20-pixel area on the USV-VN validation split}
+
+%==============================================================================
+\section{Experimental Setup}
+\label{sec:data}
+%==============================================================================
+\textbf{Training data.} All segmentation models are trained on MaSTr1325~\cite{bovcon2019mastr} ($512\times384$ images, three classes plus \emph{unknown}) using the 1299/26 train/validation split of the eWaSR repository, at an input resolution of $384\times512$. Training runs on one NVIDIA T4 GPU per model (Kaggle). \tbd{number of runs/seeds per model}
+
+\textbf{MODS.} Following~\cite{bovcon2022mods}, we report obstacle precision, recall and F1, F1 inside the danger zone, and water-edge accuracy using the official evaluation toolkit~\cite{mods_toolkit}. MODS covers boats, buoys and other dynamic obstacles; we treat the danger-zone F1, which counts only obstacles close enough to require avoidance, as the primary accuracy metric.
+
+\textbf{USV-VN.} We recorded an urban river in Vietnam with a stereo camera mounted just above the waterline and use the left frames: 751 images at $640\times640$ with one bounding box per image around a single floating object, a yellow plastic can of the type commonly used on Vietnamese waterways as an improvised marker buoy. We use it as a proxy for small buoys; larger obstacles such as boats are evaluated on MODS only. Consecutive frames are nearly identical, so a random split would leak test content into training; we split at natural gaps in the frame sequence instead (Table~\ref{tab:usvvn}). Because obstacles overlap the river bank in the image when the camera is this low, predicted obstacle masks are often connected to the bank, and box IoU underestimates segmentation quality. We therefore use a MODS-style \emph{coverage} criterion for both segmentation and detection: a ground-truth box counts as detected when at least 50\% of its pixels are predicted as obstacle; detector boxes are rasterised into an obstacle mask so both methods are scored identically. False positives are connected obstacle components of at least 20 pixels that lie below a hand-drawn water-edge line (drawn behind dynamic obstacles, as in MODS) and do not touch any ground-truth box. Box IoU $\geq 0.5$ is reported only as a secondary criterion for the detector. All valid/test boxes fall in the COCO ``medium'' range, so for size analysis we split them at $\sqrt{\text{area}}=56$ and 70 pixels; analysis of small obstacles relies on MODS. \tbd{confirm the 0.5 coverage threshold against the MODS toolkit}
+
+\begin{table}[t]
+\centering
+\caption{USV-VN temporal split (frame indices of the left camera).}
+\label{tab:usvvn}
+\begin{tabular}{lcc}
+\toprule
+Split & Images & Frames \\
+\midrule
+Train      & 431 & 1--754 \\
+Validation & 179 & 863--1047 \\
+Test       & 141 & 1059--1259 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Hardware and measurement.} Raspberry~Pi~5 (8\,GB) with a Hailo-8L M.2 module; HailoRT 4.23; Hailo Dataflow Compiler 3.34 with post-training quantization (optimisation level 0), 64 calibration images from the MaSTr1325 training set, and the compiler optimisation level set to maximum. Cross-layer equalization is enabled or disabled per model, whichever gives the higher INT8--FP32 agreement on the USV-VN validation split averaged over three random calibration sets; this disables it for all four models (Sec.~\ref{sec:quant}). For eWaSR we also report the fastest build we obtained (equalization on, 7 contexts), whose INT8 agreement, however, varies strongly with the calibration set. End-to-end throughput is the median of three passes over the 141 test frames after one warm-up pass, reading frames from the SD card; the Pi stayed at 35--38\,\textdegree C without throttling (governor \texttt{ondemand}, \tbd{cooler}). Accelerator throughput and hardware latency are measured with \texttt{hailortcli benchmark} (streaming, 15\,s); end-to-end throughput covers frame read to obstacle list over the 141 USV-VN test images with the pipeline above; power is measured at the USB-C input with \tbd{meter}. YOLOv8n~\cite{jocher2023yolov8} is initialised from COCO weights, trained on the USV-VN training split at $640\times640$ and compiled with the Hailo Model Zoo for the same device.
+
+%==============================================================================
+\section{Results}
+%==============================================================================
+\subsection{FP32 accuracy}
+\label{sec:fp32}
+\begin{table}[t]
+\centering
+\caption{FP32 accuracy on MODS (all 94 sequences, official toolkit). Water edge: RMSE in pixels. All models except the first trained with the same recipe from ImageNet initialisation. \tbd{source runs: E1, E2 (V6), E6, E7 (V7, commit 042a844), E3; one training run each}}
+\label{tab:fp32}
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{lcccccc}
+\toprule
+& \multicolumn{3}{c}{Obstacles} & Danger & Water & \\
+Model & Pr & Re & F1 & F1 & edge & Params \\
+\midrule
+eWaSR (official weights)$^\dagger$ & 97.5 & 88.0 & 92.5 & 90.3 & 21 & 60.3\,M \\
+\midrule
+eWaSR (E1)                & 95.4 & 89.9 & 92.6 & 85.8 & 19 & 60.3\,M \\
+eWaSR-C (E3)              & \tbd{} & \tbd{} & \tbd{} & \tbd{} & \tbd{} & 62.1\,M \\
+eWaSR (D-mixer) (E2)      & 94.5 & 88.3 & 91.3 & 85.5 & 19 & 60.3\,M \\
+eWaSR-Lite (S-mixer) (E6) & 96.0 & 88.8 & 92.2 & 85.0 & 20 & 23.4\,M \\
+\textbf{eWaSR-Lite} (E7)  & 96.0 & 88.4 & 92.1 & 84.7 & 21 & 23.4\,M \\
+\bottomrule
+\multicolumn{7}{l}{\footnotesize $^\dagger$Reference only; trained with a different recipe.}
+\end{tabular}
+\end{table}
+\tbd{Answer RQ1: does removing the MLPs (Lite) lose accuracy? Does D lose accuracy against S, and does dropping spatial attention (C) hurt? Report run-to-run spread (seeds) and say whether differences exceed it. MaSTr1325 validation mIoU (26 images, not for the paper): E1 0.9914, E6 0.9915, E2 0.9911, E7 0.9917.}
+
+\subsection{Hardware compatibility and speed}
+\label{sec:hw}
+\begin{table}[t]
+\centering
+\caption{Effect of removing the feature-mixer MLPs on Raspberry~Pi~5 + Hailo-8L ($384\times512$, INT8, 64 calibration images, equalization off, compiler optimisation level maximum for every cell). Each cell: contexts / accelerator FPS / end-to-end FPS.}
+\label{tab:c1}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lccc}
+\toprule
+Mixer & Full MLPs & Reduced MLPs (Lite) & Effect (FPS) \\
+\midrule
+S & 8 / 17.5 / 16.2 & 4 / 26.0 / 24.0 & +49\% / +48\% \\
+D & 8 / 16.0 / 15.3 & \textbf{4 / 29.7 / 27.3} & +86\% / +79\% \\
+\bottomrule
+\multicolumn{4}{l}{\footnotesize Against the fastest eWaSR HEF (equalization on, 7 contexts, 18.8 / 17.8 FPS),}\\
+\multicolumn{4}{l}{\footnotesize the S row gains +39\% / +35\%.}
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Compilation and speed on Raspberry~Pi~5 + Hailo-8L at $384\times512$, INT8 (64 calibration images, compiler optimisation level maximum; equalization on for E1, off for the others, chosen on USV-VN validation). FPS: accelerator throughput (\texttt{hailortcli}); Lat.: hardware latency; E2E: end-to-end throughput of the on-device pipeline.}
+\label{tab:hw}
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{lccccc}
+\toprule
+Model & Contexts & FPS & Lat.\ (ms) & E2E FPS & Power (W) \\
+\midrule
+\textbf{eWaSR (E1)}        & 8      & 17.5   & 56.1   & 16.2   & \tbd{} \\
+eWaSR (E1), equal.\ on$^\ast$ & 7 & 18.8 & 50.9 & 17.8 & \tbd{} \\
+eWaSR (D-mixer) (E2)      & 8      & 16.0   & 60.0   & 15.3   & \tbd{} \\
+eWaSR-Lite (S-mixer) (E6) & 4      & 26.0   & 36.6   & 24.0   & \tbd{} \\
+\textbf{eWaSR-Lite} (E7)  & 4      & 29.7   & 31.0   & 27.3   & \tbd{} \\
+YOLOv8n                   & \tbd{} & \tbd{} & \tbd{} & \tbd{} & \tbd{} \\
+\bottomrule
+\end{tabular}
+\end{table}
+% $^\ast$ fastest E1 HEF; INT8 agreement not stable over calibration seeds (94.95--98.92\% valid, 90.56--97.74\% test on device). Primary E1 row = equalization off (protocol), Q-016. Add the footnote to the caption.\n% End-to-end = median of 3 runs after 1 warm-up (pi/run.py --repeat 3), reading frames from the SD card (31/10).\n% Protocol Q-014 (30/10): E1 = hailo/build/e1_ewasr_o0max (64, eq on); E7 = e7_ewasr_h_lite_c64noeqmax; E2 = e2_ewasr_h_c64noeqmax, E6 = e6_ewasr_lite_c64noeqmax (30/10).\n% Old protocol (1024, eq on) rows: hailo/build/<run>_c1024max (21/10/2026), results/pi/<run>_c1024max. E1 and E2 compiled --from-quantized after an OOM in the full run (same quantized HAR, same result); state this in Sec. IV.
+% NOTE: E1 INT8 (1024 calib) agrees with FP32 on only 87.4% of pixels (64 calib: 97.7%); E6 98.7%. See .coord/INBOX.md Q-011. CPU-only Pi 5 baseline: 3.0 FPS.
+\tbd{End-to-end throughput of Lite is CPU-bound: E7 accelerator FPS rose 28.1$\to$29.7 between two quantizations while end-to-end stayed 24.8. Compile sensitivity: same graph, different quantization changes contexts (E1 64/eq off: 8 contexts, 17.5 FPS) -- report min--max over 3 calibration seeds (Q-015).} \tbd{Answer RQ2: the bottleneck is the number of contexts, not unsupported operators. Mention that the published eWaSR weights compile to fewer contexts because the DFC removes the silenced MLPs, and that the compiler optimisation level changes contexts and FPS for identical graphs (E6: 6 to 5 contexts, 22.1 to 25.1 FPS at opt0/64). S versus D flipped sign three times across weights and compiler settings (published weights D>S; opt0/64 S-lite 22.1 > D-lite 21.0 FPS; calib 1024 + max D-lite 28.1 > S-lite 24.9), while removing the MLPs helped in every setting. Optional: recompile E6 with max once more to check that 4 vs 5 contexts is stable. Compare with eWaSR on OAK-D as reported in~\cite{tersek2023ewasr}, noting the different hardware.}
+
+\begin{figure}[t]
+\centering
+\figplaceholder{Fig.~2: F1 on MODS versus FPS on Hailo-8L for input resolutions 288$\times$384, 384$\times$512, 480$\times$640 (Pareto front).}{3.6cm}
+\caption{Accuracy--speed trade-off across input resolutions. \tbd{plot}}
+\label{fig:pareto}
+\end{figure}
+
+\subsection{INT8 quantization}
+\label{sec:quant}
+\begin{figure}[t]
+\centering
+\figplaceholder{Fig.~3: MODS recall/F1 per obstacle-size bin for FP32, INT8 PTQ, INT8 + QFT (eWaSR-Lite).}{3.6cm}
+\caption{Effect of quantization by obstacle size. \tbd{plot}}
+\label{fig:quant}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{Quantization ablation for eWaSR-Lite on MODS (F1, \%).}
+\label{tab:quant}
+\begin{tabular}{lcc}
+\toprule
+Setting & F1 & $\Delta$ vs FP32 \\
+\midrule
+FP32                                  & \tbd{} & -- \\
+PTQ, 64 calib.\ images (MaSTr1325)    & \tbd{} & \tbd{} \\
+PTQ, 256 calib.\ images (MaSTr1325)   & \tbd{} & \tbd{} \\
+PTQ, 1024 calib.\ images (MaSTr1325)  & \tbd{} & \tbd{} \\
+PTQ, 256 calib.\ images (USV-VN)      & \tbd{} & \tbd{} \\
+PTQ + 16-bit gates/sigmoids           & \tbd{} & \tbd{} \\
+QFT                                   & \tbd{} & \tbd{} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\tbd{Answer RQ3: where does INT8 lose accuracy (small obstacles, water edge)? Which mitigation recovers it, and at what speed cost? Main tables use the best calibration size per model (E1, E2: 64 images; E6, E7: 1024), so that the gain of Lite cannot come from a badly quantized baseline. Same-protocol result (1024 images) for this section: INT8/FP32 pixel agreement on USV-VN test E1 97.7\%$\to$87.4\%, E2 96.9\%$\to$95.5\% (recall 139/141), E6 98.6\%$\to$98.7\%, E7 99.0\%$\to$98.9\% (64$\to$1024). Sweep (emulator, agreement with FP32): E1 97.8/95.8/87.8\% and E6 98.6/98.6/98.8\% for 64/256/1024 images. FP32 activation ranges do not grow with the calibration size ($\le$4\%, tools/activation_stats.py), but the DFC quantization ranges of the full-MLP branch do (up to 22.6$\times$, e.g. block-2 norm2 from [-2.8, 8.1] to [-49.7, 196] while its FP32 maximum is 0.94). Disabling cross-layer equalization restores E1 at 1024 images to 97.0\%. Full matrix (64/1024 images $\times$ equalization on/off, Q-013) and draft wording (Q-013): on DFC 3.34 the INT8--FP32 agreement of both full eWaSR models is sensitive to the quantization settings: going from 64 to 1024 calibration images lowers it by 0.8--10 points (E1 97.8$\to$87.8\%; E2 97.1$\to$96.2\%, recall 139/141), and by 0.8--1.4 points even with cross-layer equalization disabled. For E1 the main cause is equalization, which widens the quantization ranges of the MLP branch by up to 22.6$\times$ (equalization off: 97.0\%). eWaSR-Lite is stable in every setting (98.6--99.3\%, each model within 0.6 points), so deployment needs no quantization tuning. Report C2 numbers as emulator results (emulator vs device agreement 99.59\%, E6). Discussion: recommend disabling equalization on DFC 3.34 (harmless or helpful for all four); ``near-dead block-3 MLP of E1 ($\gamma_2=2\times10^{-9}$)'' only as a hypothesis.}
+
+\subsection{Segmentation versus detection on USV-VN}
+\label{sec:yolo}
+\begin{table}[t]
+\centering
+\caption{USV-VN test set (141 images, coverage criterion). FP: false-positive components below the water edge.}
+\label{tab:yolo}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lccccc}
+\toprule
+Model & Precision & Recall & F1 & FP & FPS \\
+\midrule
+eWaSR-Lite (INT8)                  & \tbd{} & \tbd{} & \tbd{} & \tbd{} & \tbd{} \\
+eWaSR-Lite + colour aug.\ (INT8)   & \tbd{} & \tbd{} & \tbd{} & \tbd{} & \tbd{} \\
+YOLOv8n (INT8)                  & \tbd{} & \tbd{} & \tbd{} & \tbd{} & \tbd{} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\figplaceholder{Fig.~4: qualitative examples — (a) obstacle found by segmentation but missed by YOLOv8n; (b) false alarms on bank reflections; (c) MODS frame with an object class absent from USV-VN.}{3.6cm}
+\caption{Qualitative comparison. \tbd{select frames}}
+\label{fig:qual}
+\end{figure}
+\tbd{Answer RQ4. Zero-shot segmentation already reaches high recall on USV-VN; the difference between methods is expected in false positives (reflections) and in obstacle types not seen by the detector (MODS).}
+
+%==============================================================================
+\section{Discussion and Limitations}
+%==============================================================================
+\tbd{Fill after results.} Points to address: (i) false alarms caused by bank reflections at low camera height, and whether colour augmentation reduces them; (ii) USV-VN contains a single buoy-like object at a single location, so it measures small-buoy detection only and not boats or other obstacle types (covered by MODS); its frames were also resized from the original sensor resolution, which may distort the aspect ratio; (iii) without camera calibration, absolute distance and the MODS danger zone cannot be computed on USV-VN; (iv) all on-device tests replay recorded footage, without closed-loop navigation; (v) differences between architecture variants should be read against the run-to-run spread.
+
+%==============================================================================
+\section{Conclusion}
+%==============================================================================
+We deployed eWaSR on a Raspberry~Pi~5 with a Hailo-8L and found that its speed is set by the number of compiler contexts, which depends on feature-mixer MLPs that the published weights had already silenced. Removing them cuts the parameters by 61\%, halves the number of contexts and raises the accelerator throughput by 49--86\% without loss of accuracy; with a depthwise spatial gate, eWaSR-Lite runs at 27.3~FPS end-to-end, at least 53\% faster than eWaSR, and its INT8 accuracy does not depend on the calibration set. \tbd{Summarise answers to RQ1--RQ4 in two to three sentences and give a recommended configuration for low-cost USVs.} Future work includes evaluation on LaRS~\cite{zust2023lars}, IMU-assisted horizon priors, and fine-tuning on USV-VN with pseudo-masks generated by Segment Anything~\cite{kirillov2023sam}.
+
+\section*{Acknowledgment}
+\tbd{}
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\end{document}
