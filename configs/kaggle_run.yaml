@@ -5,20 +5,27 @@
 # E1/E2 (V6, commit 35dc4f8) và E6/E7 (T08): cùng giao thức, cùng khởi tạo backbone ImageNet (D3),
 # 100 epoch theo configs/base.yaml.
 runs:
-  # T03 (Q-020): công thức bài eWaSR — fp32 (không AMP), batch 16, tối đa 200 epoch, early stopping
-  # patience 20 theo val loss. metrics.csv ghi mean|γ₂| và sqrt(v) của RMSprop mỗi epoch cho khối 0–5.
-  # Câu hỏi: công thức này có làm MLP mixer 1–5 chết hết như trọng số công bố không (E1), và E7 có
-  # thu hẹp khoảng cách F1 vùng nguy hiểm không (E7).
-  - name: e1_ewasr_paper
-    kind: seg
-    config: configs/ewasr.yaml
-    set: ["model.init_weights=null", "train.amp=false", "train.batch_size=16", "train.epochs=200",
-          "train.early_stop_patience=20"]
-  - name: e7_ewasr_h_lite_paper
+  # S2: huấn luyện lặp E2 (eWaSR + D mixer) và E6 (eWaSR-Lite, S mixer), seed 1 và 2 — cùng giao thức
+  # seed 0 (E2: V6, E6: T08), để Bảng 3 của bài có trung bình ± độ lệch chuẩn cho cả 4 biến thể.
+  - name: e2_ewasr_h_s1
     kind: seg
     config: configs/ewasr_h.yaml
-    set: ["model.name=ewasr_h_lite", "model.init_weights=null", "train.amp=false", "train.batch_size=16",
-          "train.epochs=200", "train.early_stop_patience=20"]
+    set: ["model.init_weights=null", "train.seed=1"]
+  - name: e6_ewasr_lite_s1
+    kind: seg
+    config: configs/ewasr.yaml
+    set: ["model.name=ewasr_lite", "model.init_weights=null", "train.seed=1"]
+  - name: e2_ewasr_h_s2
+    kind: seg
+    config: configs/ewasr_h.yaml
+    set: ["model.init_weights=null", "train.seed=2"]
+  - name: e6_ewasr_lite_s2
+    kind: seg
+    config: configs/ewasr.yaml
+    set: ["model.name=ewasr_lite", "model.init_weights=null", "train.seed=2"]
+  # T03 (xong, Kaggle V10): e1_ewasr_paper, e7_ewasr_h_lite_paper — công thức bài eWaSR (fp32, batch 16,
+  #   tối đa 200 epoch, early stopping patience 20 theo val loss)
+  # S1 (xong, commit 97924a2): e1_ewasr_s1/s2, e7_ewasr_h_lite_s1/s2 — "train.seed=1|2"
   # T09 (xong, Kaggle V9, commit 9a0bd11): e7_ewasr_h_lite_lars, e1_ewasr_lars — data.dataset=lars
   # Smoke trước khi tốn GPU:
   # - name: smoke_ewasr_h
