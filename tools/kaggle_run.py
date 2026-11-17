@@ -31,6 +31,7 @@ from wars.config import load_config  # noqa: E402
 SPLITS = ("train", "valid", "test")
 _print_lock = threading.Lock()
 _pip_lock = threading.Lock()
+_vlm_ready = False
 
 
 def say(msg):
@@ -77,6 +78,21 @@ def find_lars(input_root):
     for lst in Path(input_root).rglob("image_list.txt"):
         if lst.parent.name == "train" and (lst.parent / "semantic_masks").is_dir():
             return str(lst.parents[1])
+    return None
+
+
+def find_mods(input_root):
+    """Thư mục gốc MODS (có mods.json và sequences/) dưới input_root, hoặc None."""
+    for js in Path(input_root).rglob("mods.json"):
+        if (js.parent / "sequences").is_dir():
+            return str(js.parent)
+    return None
+
+
+def find_model_dir(input_root, pattern):
+    """Thư mục mô hình (có config.json) khớp mẫu glob dưới input_root, ví dụ Kaggle Models; None nếu không có."""
+    for cfg in sorted(Path(input_root).glob(f"{pattern}/config.json")):
+        return str(cfg.parent)
     return None
 
 
@@ -128,6 +144,7 @@ class Runner:
         self.dirty = bool(git("status", "--porcelain", "--untracked-files=no"))
         self.mastr, self.usv = find_data(args.input_root)
         self.lars = find_lars(args.input_root)
+        self.mods = find_mods(args.input_root)
 
     def remaining_h(self):
         return max(0.05, self.rc.get("time_limit_h", 11) - (time.time() - self.t0) / 3600)
@@ -156,6 +173,8 @@ class Runner:
                 self.run_seg(spec, slot, out, info)
             elif info["kind"] == "yolo":
                 self.run_yolo(spec, slot, out, info)
+            elif info["kind"] == "vlm":
+                self.run_vlm(spec, slot, out, info)
             else:
                 raise ValueError(f"kind không hợp lệ: {info['kind']}")
         except Exception as e:  # một run lỗi không được làm dừng các run khác
@@ -217,6 +236,29 @@ class Runner:
                                                   "--size-edges", 56, 70, "--out-json", out / "usv_test.json"],
                            out, name, env)
 
+    def run_vlm(self, spec, slot, out, info):
+        """Mô hình thị giác–ngôn ngữ phát hiện vật cản trên tập con MODS (tools/vlm_detect.py) → boxes.json."""
+        name = spec["name"]
+        if self.mods is None:
+            raise FileNotFoundError(f"run vlm cần MODS (mods.json + sequences/) dưới {self.args.input_root}")
+        with _pip_lock:  # Qwen2.5-VL cần transformers ≥ 4.49; cài một lần cho mọi run vlm
+            global _vlm_ready
+            if not _vlm_ready:
+                subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-U", "transformers>=4.49",
+                                "accelerate"], check=True)
+                _vlm_ready = True
+        cmd = [sys.executable, "tools/vlm_detect.py", "--model", spec["model"], "--mods-root", self.mods,
+               "--sequences-file", spec.get("sequences_file", "configs/mods_vlm_subset.txt"), "--out", out]
+        if spec.get("model_glob"):
+            path = find_model_dir(self.args.input_root, spec["model_glob"])
+            if path is None:
+                raise FileNotFoundError(f"không thấy mô hình khớp {spec['model_glob']} dưới {self.args.input_root}")
+            cmd += ["--model-path", path]
+        cmd += [str(a) for a in spec.get("args", [])]
+        rc = stream(cmd, out / "train.log", name, self.env(slot))
+        done = (out / "boxes.json").exists()
+        info.update(returncode=rc, has_checkpoint=done, status="done" if rc == 0 and done else "failed")
+
     def run_yolo(self, spec, slot, out, info):
         name = spec["name"]
         if self.usv is None:
@@ -257,6 +299,7 @@ class Runner:
             f"workers/run: {self.workers}")
         say(f"MaSTr1325: {self.mastr}")
         say(f"USV-VN: {self.usv}")
+        say(f"MODS: {self.mods}")
         if self.usv is None:
             say("CẢNH BÁO: không tìm thấy USV-VN → bỏ qua đánh giá USV-VN; run yolo sẽ lỗi")
         if self.mastr is None and any(r.get("kind", "seg") == "seg" for r in runs):
