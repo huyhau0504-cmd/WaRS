@@ -55,8 +55,11 @@ class OWLv2:
         out = self.model(**inp)
         # OWLv2 đệm ảnh thành hình vuông ở góc trên trái → hộp tính theo cạnh lớn nhất
         s = max(img.size)
-        r = self.proc.post_process_object_detection(out, threshold=self.thr,
-                                                    target_sizes=torch.tensor([[s, s]], device=self.device))[0]
+        sizes = torch.tensor([[s, s]], device=self.device)
+        if hasattr(self.proc, "post_process_grounded_object_detection"):  # transformers ≥ 4.50
+            r = self.proc.post_process_grounded_object_detection(out, threshold=self.thr, target_sizes=sizes)[0]
+        else:
+            r = self.proc.post_process_object_detection(out, threshold=self.thr, target_sizes=sizes)[0]
         boxes = [[*map(float, b), float(sc), NAMES[int(l)]] for b, sc, l in zip(r["boxes"], r["scores"], r["labels"])]
         return boxes, None
 
