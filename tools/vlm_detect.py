@@ -4,6 +4,7 @@
     python tools/vlm_detect.py --model paligemma2 --model-path /kaggle/input/paligemma-2/... ...
     python tools/vlm_detect.py --model qwen25vl ...
     python tools/vlm_detect.py ... --limit 5          # thử nhanh
+    python tools/vlm_detect.py --model owlv2 --images /path/lars/val/images --out out/owlv2_lars   # thư mục ảnh bất kỳ
 
 Mô hình (mặc định tải từ Hugging Face; --model-path để dùng bản đã có, ví dụ Kaggle Models):
   owlv2       google/owlv2-base-patch16-ensemble — ViT của Google + bộ mã hóa văn bản, phát hiện theo danh sách tên
@@ -143,7 +144,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True, choices=list(DEFAULT_IDS))
     ap.add_argument("--model-path", help="thư mục hoặc id Hugging Face (mặc định: id chuẩn của từng mô hình)")
-    ap.add_argument("--mods-root", required=True)
+    ap.add_argument("--mods-root", help="MODS: chạy các sequence trong --sequences-file")
+    ap.add_argument("--images", help="hoặc: mọi ảnh *.jpg/*.png trong thư mục này (khóa = tên file không đuôi)")
     ap.add_argument("--sequences-file", default="configs/mods_vlm_subset.txt")
     ap.add_argument("--out", required=True)
     ap.add_argument("--thr", type=float, default=0.05, help="ngưỡng điểm tối thiểu của OWLv2 (lọc lại khi chấm)")
@@ -151,10 +153,16 @@ def main():
     args = ap.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    root, out = Path(args.mods_root), Path(args.out)
+    out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    seq_ids = [int(x) for x in Path(args.sequences_file).read_text().split()]
-    frames = mods_frames(root, seq_ids)[:args.limit]
+    if args.images:
+        frames = sorted((p.stem, p) for p in Path(args.images).iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
+    elif args.mods_root:
+        seq_ids = [int(x) for x in Path(args.sequences_file).read_text().split()]
+        frames = mods_frames(Path(args.mods_root), seq_ids)
+    else:
+        ap.error("cần --mods-root hoặc --images")
+    frames = frames[:args.limit]
     res_path = out / "boxes.json"
     res = json.loads(res_path.read_text()) if res_path.exists() else {"meta": {}, "frames": {}}
 
