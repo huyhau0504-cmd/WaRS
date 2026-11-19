@@ -30,10 +30,13 @@ BOX_COLORS = [(52, 104, 235), (122, 175, 27), (214, 120, 42)]  # BGR: cam, xanh 
 
 
 def read_mods_mask(path):
-    bgr = cv2.imread(str(path))
-    if bgr is None:
+    """Mask màu MODS (3 kênh) hoặc mask mã lớp 0/1/2 (1 kênh, như preds/lars/*/masks) → mã lớp."""
+    raw = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+    if raw is None:
         return None
-    rgb = bgr[:, :, ::-1]
+    if raw.ndim == 2:
+        return raw
+    rgb = raw[:, :, ::-1]
     cls = np.full(rgb.shape[:2], 255, np.uint8)
     for c, col in enumerate(MODS_COLORS):
         cls[(rgb == col).all(-1)] = c
@@ -76,9 +79,14 @@ def banner(img, title, sub, stale=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mods-root", default=str(Path.home() / "datasets/mods"))
-    ap.add_argument("--seq", required=True)
+    ap.add_argument("--seq", help="MODS: tên sequence")
+    ap.add_argument("--images-dir", help="hoặc ảnh rời (LaRS val/images): trình chiếu, mỗi ảnh giữ --hold khung")
+    ap.add_argument("--scene", choices=["river_like", "sea_like"], help="LaRS: chỉ lấy ảnh có scene_type này")
+    ap.add_argument("--max-images", type=int, default=40)
+    ap.add_argument("--hold", type=int, default=20, help="số khung video cho mỗi ảnh rời")
     ap.add_argument("--mask-dir", default=str(ROOT / "preds/mods/e7_ewasr_h_lite_c64noeqmax_int8"))
     ap.add_argument("--ewasr-ms", type=float, default=44.0, help="thời gian/ảnh của eWaSR-Lite (đầu-cuối trên Pi 5)")
+    ap.add_argument("--ewasr-name", default="eWaSR-Lite (ours)")
     ap.add_argument("--boxes", nargs="+", required=True, help="'Tên=đường/dẫn/boxes.json[:ngưỡng]'")
     ap.add_argument("--realtime", action="store_true")
     ap.add_argument("--frame-dt", type=float, default=1.0,
@@ -88,7 +96,20 @@ def main():
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
-    frames = sorted((Path(args.mods_root).expanduser() / "sequences" / args.seq / "frames").glob("*L.jpg"))
+    if args.images_dir:
+        imgs = Path(args.images_dir).expanduser()
+        frames = sorted(p for p in imgs.iterdir() if p.suffix.lower() in (".jpg", ".png"))
+        if args.scene:
+            ann = json.loads((imgs.parent / "image_annotations.json").read_text())["annotations"]
+            keep = {Path(a["file_name"]).stem for a in ann if a["labels"]["scene_type"] == args.scene}
+            frames = [f for f in frames if f.stem in keep]
+        frames = frames[:args.max_images]
+        key = lambda f: f.stem  # noqa: E731
+        mask_path = lambda f: Path(args.mask_dir) / f"{f.stem}.png"  # noqa: E731
+    else:
+        frames = sorted((Path(args.mods_root).expanduser() / "sequences" / args.seq / "frames").glob("*L.jpg"))
+        key = lambda f: f"{args.seq}/{f.stem}"  # noqa: E731
+        mask_path = lambda f: Path(args.mask_dir) / args.seq / f"{f.stem}.png"  # noqa: E731
     models = []
     for k, spec in enumerate(args.boxes):
         name, rest = spec.split("=", 1)
@@ -123,10 +144,10 @@ def main():
         j = src[0]
         sub = f"Pi 5 + Hailo-8L INT8 · {args.ewasr_ms / 1000:.3f} s/anh"
         if j is None:
-            tile = banner(img, "eWaSR-Lite (ours)", sub, "dang xu ly anh dau...")
+            tile = banner(img, args.ewasr_name, sub, "dang xu ly anh dau...")
         else:
-            m = read_mods_mask(Path(args.mask_dir) / args.seq / f"{frames[j].stem}.png")
-            tile = banner(overlay(img, m) if m is not None else img, "eWaSR-Lite (ours)", sub,
+            m = read_mods_mask(mask_path(frames[j]))
+            tile = banner(overlay(img, m) if m is not None else img, args.ewasr_name, sub,
                           f"ket qua cua {(i - j) * args.frame_dt:.1f} s truoc" if i - j > 0 else None)
         tiles.append(tile)
         for k, m in enumerate(models):
@@ -135,14 +156,16 @@ def main():
             if j is None:
                 tiles.append(banner(img, m["name"], sub, "dang xu ly anh dau..."))
                 continue
-            boxes = m["frames"].get(f"{args.seq}/{frames[j].stem}", [])
+            boxes = m["frames"].get(key(frames[j]), [])
             drawn, _ = draw_boxes(img, boxes, m["color"], m["thr"])
             tiles.append(banner(drawn, m["name"], sub,
                                 f"khung bao cua {(i - j) * args.frame_dt:.1f} s truoc" if i - j > 0 else None))
         while len(tiles) < 4:
             tiles.append(np.zeros_like(img))
         tiles = [cv2.resize(x, (W, H), interpolation=cv2.INTER_AREA) for x in tiles[:4]]
-        vw.write(np.vstack([np.hstack(tiles[:2]), np.hstack(tiles[2:])]))
+        grid = np.vstack([np.hstack(tiles[:2]), np.hstack(tiles[2:])])
+        for _ in range(args.hold if args.images_dir else 1):
+            vw.write(grid)
     vw.release()
     print(f"{len(frames)} khung → {out}" + (" (thời gian thực)" if args.realtime else ""))
 
