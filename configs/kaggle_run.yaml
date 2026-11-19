@@ -12,13 +12,9 @@ runs:
   - name: vlm_owlv2              # ViT của Google + văn bản (open-vocabulary detector)
     kind: vlm
     model: owlv2
-  - name: vlm_qwen25vl           # Qwen2.5-VL-3B
-    kind: vlm
-    model: qwen25vl
-  - name: vlm_paligemma2         # SigLIP (Google) + Gemma 2B
-    kind: vlm
-    model: paligemma2
-    model_glob: "**/paligemma2-3b-mix-448/*"
+  # V11 (19/11): vlm_qwen25vl, vlm_paligemma2 xong; vlm_owlv2 lỗi hàm hậu xử lý → chạy lại riêng OWLv2.
+  # - name: vlm_qwen25vl / model: qwen25vl;  - name: vlm_paligemma2 / model: paligemma2,
+  #   model_glob: "**/paligemma2-3b-mix-448/*"
   # T03 (xong, Kaggle V10, commit 08d8f18): e1_ewasr_paper, e7_ewasr_h_lite_paper — công thức bài eWaSR.
   # T09 (xong, Kaggle V9, commit 9a0bd11): e7_ewasr_h_lite_lars, e1_ewasr_lars — data.dataset=lars
   # Smoke trước khi tốn GPU:
