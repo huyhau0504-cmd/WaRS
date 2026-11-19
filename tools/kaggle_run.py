@@ -239,16 +239,21 @@ class Runner:
     def run_vlm(self, spec, slot, out, info):
         """Mô hình thị giác–ngôn ngữ phát hiện vật cản trên tập con MODS (tools/vlm_detect.py) → boxes.json."""
         name = spec["name"]
-        if self.mods is None:
-            raise FileNotFoundError(f"run vlm cần MODS (mods.json + sequences/) dưới {self.args.input_root}")
+        if spec.get("data", "mods") == "lars":  # LaRS val (sông/hồ/biển), từ dataset LaRS đã có
+            if self.lars is None:
+                raise FileNotFoundError(f"run vlm data=lars cần LaRS dưới {self.args.input_root}")
+            src = ["--images", str(Path(self.lars) / "val" / "images")]
+        else:
+            if self.mods is None:
+                raise FileNotFoundError(f"run vlm cần MODS (mods.json + sequences/) dưới {self.args.input_root}")
+            src = ["--mods-root", self.mods, "--sequences-file", spec.get("sequences_file", "configs/mods_vlm_subset.txt")]
         with _pip_lock:  # Qwen2.5-VL cần transformers ≥ 4.49; cài một lần cho mọi run vlm
             global _vlm_ready
             if not _vlm_ready:
                 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-U", "transformers>=4.49",
                                 "accelerate"], check=True)
                 _vlm_ready = True
-        cmd = [sys.executable, "tools/vlm_detect.py", "--model", spec["model"], "--mods-root", self.mods,
-               "--sequences-file", spec.get("sequences_file", "configs/mods_vlm_subset.txt"), "--out", out]
+        cmd = [sys.executable, "tools/vlm_detect.py", "--model", spec["model"], *src, "--out", out]
         if spec.get("model_glob"):
             path = find_model_dir(self.args.input_root, spec["model_glob"])
             if path is None:
