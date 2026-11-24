@@ -60,9 +60,9 @@ def draw_boxes(img, boxes, color, thr):
             continue
         n += 1
         p1, p2 = (int(x1), int(y1)), (int(x2), int(y2))
-        cv2.rectangle(out, p1, p2, color, 3)
+        cv2.rectangle(out, p1, p2, color, 2)
         if label:
-            cv2.putText(out, str(label)[:16], (p1[0], max(18, p1[1] - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
+            cv2.putText(out, str(label)[:16], (p1[0], max(18, p1[1] - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
     return out, n
 
 
@@ -87,6 +87,7 @@ def main():
     ap.add_argument("--mask-dir", default=str(ROOT / "preds/mods/e7_ewasr_h_lite_c64noeqmax_int8"))
     ap.add_argument("--ewasr-ms", type=float, default=44.0, help="thời gian/ảnh của eWaSR-Lite (đầu-cuối trên Pi 5)")
     ap.add_argument("--ewasr-name", default="eWaSR-Lite (ours)")
+    ap.add_argument("--ewasr-sub", help="dòng phụ của ô eWaSR-Lite (mặc định: Pi 5 + Hailo-8L INT8 · thời gian/ảnh)")
     ap.add_argument("--boxes", nargs="+", required=True, help="'Tên=đường/dẫn/boxes.json[:ngưỡng]'")
     ap.add_argument("--realtime", action="store_true")
     ap.add_argument("--frame-dt", type=float, default=1.0,
@@ -130,7 +131,9 @@ def main():
     secs = [args.ewasr_ms / 1000] + [m["sec"] for m in models]
     for i, f in enumerate(frames):
         t = i * args.frame_dt
-        img = cv2.imread(str(f))
+        img0 = cv2.imread(str(f))
+        sx, sy = W / img0.shape[1], H / img0.shape[0]  # vẽ ở kích thước ô để chữ đều nhau
+        img = cv2.resize(img0, (W, H), interpolation=cv2.INTER_AREA)
         src = [i] * (1 + len(models))
         if args.realtime:
             for j, st in enumerate(state):
@@ -142,7 +145,7 @@ def main():
         tiles = []
         # ô 1: eWaSR-Lite
         j = src[0]
-        sub = f"Pi 5 + Hailo-8L INT8 · {args.ewasr_ms / 1000:.3f} s/anh"
+        sub = args.ewasr_sub or f"Pi 5 + Hailo-8L INT8 · {args.ewasr_ms / 1000:.3f} s/anh"
         if j is None:
             tile = banner(img, args.ewasr_name, sub, "dang xu ly anh dau...")
         else:
@@ -157,6 +160,7 @@ def main():
                 tiles.append(banner(img, m["name"], sub, "dang xu ly anh dau..."))
                 continue
             boxes = m["frames"].get(key(frames[j]), [])
+            boxes = [[b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy, *b[4:]] for b in boxes]
             drawn, _ = draw_boxes(img, boxes, m["color"], m["thr"])
             tiles.append(banner(drawn, m["name"], sub,
                                 f"khung bao cua {(i - j) * args.frame_dt:.1f} s truoc" if i - j > 0 else None))
