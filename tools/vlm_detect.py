@@ -94,7 +94,8 @@ class PaliGemma2:
 class Qwen25VL:
     def __init__(self, path, device, thr):
         from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
-        self.proc = AutoProcessor.from_pretrained(path)
+        # giới hạn số pixel ≈ ảnh MODS (1278×958): ảnh LaRS lớn hơn sinh quá nhiều token ảnh → hết bộ nhớ T4
+        self.proc = AutoProcessor.from_pretrained(path, max_pixels=1280 * 960)
         dtype = torch.bfloat16 if device == "cuda" and torch.cuda.is_bf16_supported() else (
             torch.float16 if device == "cuda" else torch.float32)
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(path, torch_dtype=dtype).to(device).eval()
@@ -179,7 +180,11 @@ def main():
             if device == "cuda":
                 torch.cuda.synchronize()
             t = time.time()
-            boxes, text = model(img)
+            try:
+                boxes, text = model(img)
+            except torch.OutOfMemoryError:  # ghi nhận và đi tiếp thay vì dừng cả run
+                torch.cuda.empty_cache()
+                boxes, text = [], "<OOM>"
             if device == "cuda":
                 torch.cuda.synchronize()
             times.append(round(time.time() - t, 4))

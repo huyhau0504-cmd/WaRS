@@ -10,19 +10,12 @@ runs:
   # (mods.json + sequences/<seq>/frames/*L.jpg) và Kaggle Model "PaliGemma 2" (transformers, paligemma2-3b-mix-448).
   # Chấm trên laptop: tools/boxes_to_mods.py → tools/eval_mods.py --sequences $(cat configs/mods_vlm_subset.txt).
   # LaRS val (198 ảnh: 79 sông/hồ, 119 biển) — dùng dataset LaRS đã có (lasrdata). 20/11.
-  - name: vlm_owlv2_lars
-    kind: vlm
-    model: owlv2
-    data: lars
+  # V13 (24/11): vlm_owlv2_lars, vlm_paligemma2_lars xong; vlm_qwen25vl_lars hết bộ nhớ GPU (ảnh LaRS lớn)
+  # → chạy lại riêng Qwen với max_pixels ≈ ảnh MODS.
   - name: vlm_qwen25vl_lars
     kind: vlm
     model: qwen25vl
     data: lars
-  - name: vlm_paligemma2_lars
-    kind: vlm
-    model: paligemma2
-    data: lars
-    model_glob: "**/paligemma2-3b-mix-448/*"
   # V12 (19/11): chạy lại riêng vlm_owlv2 (MODS) sau khi sửa hàm hậu xử lý.
   # V11 (19/11): vlm_qwen25vl, vlm_paligemma2 xong; vlm_owlv2 lỗi hàm hậu xử lý → chạy lại riêng OWLv2.
   # - name: vlm_qwen25vl / model: qwen25vl;  - name: vlm_paligemma2 / model: paligemma2,
